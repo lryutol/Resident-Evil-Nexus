@@ -1,10 +1,7 @@
 #include "NexusShotgun.h"
 #include "Components/StaticMeshComponent.h"
 #include "UObject/ConstructorHelpers.h"
-#include "DrawDebugHelpers.h"
-#include "Kismet/GameplayStatics.h"
-#include "../Characters/NexusCharacter.h"
-#include "Camera/CameraComponent.h"
+#include "../Patterns/ShotgunStrategy.h"
 
 ANexusShotgun::ANexusShotgun()
 {
@@ -21,48 +18,18 @@ ANexusShotgun::ANexusShotgun()
     ShotgunMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     ShotgunMesh->SetSimulatePhysics(false);
 
+    AmmoType = ENexusAmmoType::Shotgun;
     WeaponDamage = 15.f;
     MaxAmmo = 8;
     CurrentAmmo = MaxAmmo;
+    ReserveAmmo = 16;
+    MaxReserveAmmo = 40;
     WeaponRange = 1000.f;
 
-    // --- CONFIGURACIÓN BASADA EN LA PISTOLA ---
-    WeaponOffsetLocation = FVector(-11.f, 2.f, 3.f); // Si queda flotando, ajusta el Y o Z
-    WeaponOffsetRotation = FRotator(90.f, -90.f, 90.f); // Mantenemos la misma rotación
-    WeaponOffsetScale = FVector(2.5f, 2.5f, 2.5f); // Escala calculada (12 / 39)
-}
+    WeaponOffsetLocation = FVector(-11.f, 2.f, 3.f);
+    WeaponOffsetRotation = FRotator(90.f, -90.f, 90.f);
+    WeaponOffsetScale = FVector(2.5f, 2.5f, 2.5f);
 
-void ANexusShotgun::FireWeapon()
-{
-    if (CurrentAmmo <= 0) return;
-    CurrentAmmo--;
-
-    if (!OwningCharacter) return;
-
-    FVector Start = OwningCharacter->GetFollowCamera()->GetComponentLocation();
-
-    for (int i = 0; i < 5; i++)
-    {
-        FVector Forward = OwningCharacter->GetFollowCamera()->GetForwardVector();
-        Forward = FMath::VRandCone(Forward, FMath::DegreesToRadians(7.0f));
-
-        FVector End = Start + (Forward * WeaponRange);
-
-        FHitResult Hit;
-        FCollisionQueryParams Params;
-        Params.AddIgnoredActor(this);
-        Params.AddIgnoredActor(OwningCharacter);
-
-        if (GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
-        {
-            DrawDebugPoint(GetWorld(), Hit.ImpactPoint, 5.f, FColor::Yellow, false, 2.f);
-
-            AActor* HitActor = Hit.GetActor();
-            if (HitActor)
-            {
-                AController* InstigatorController = OwningCharacter->GetController();
-                UGameplayStatics::ApplyPointDamage(HitActor, WeaponDamage, (End - Start).GetSafeNormal(), Hit, InstigatorController, this, nullptr);
-            }
-        }
-    }
+    // PATRON STRATEGY: sobrescribimos Hitscan con la de escopeta (5 perdigones)
+    FireStrategy = CreateDefaultSubobject<UShotgunStrategy>(TEXT("ShotgunStrategy"));
 }

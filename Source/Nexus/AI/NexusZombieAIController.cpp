@@ -35,6 +35,13 @@ void ANexusZombieAIController::Tick(float DeltaTime)
     if (!ZombiePawn || !PlayerTarget || ZombiePawn->IsHidden()) return;
     if (ZombiePawn->GetZombieState() == EZombieState::Dead) return;
 
+    // Inconsciente (Tyrant): no se mueve ni ataca
+    if (ZombiePawn->GetZombieState() == EZombieState::Downed)
+    {
+        StopMovement();
+        return;
+    }
+
     TimeSinceLastAttack += DeltaTime;
 
     float Distance = FVector::Dist(ZombiePawn->GetActorLocation(), PlayerTarget->GetActorLocation());
@@ -57,7 +64,7 @@ void ANexusZombieAIController::Tick(float DeltaTime)
     }
     else if (Distance <= ReachingRadius)
     {
-        // 2. ESTIRAR BRAZOS (Muy lento para que no patine)
+        // 2. ESTIRAR BRAZOS
         if (ZombiePawn->GetZombieState() != EZombieState::Reaching)
         {
             ZombiePawn->SetZombieState(EZombieState::Reaching);
@@ -68,7 +75,7 @@ void ANexusZombieAIController::Tick(float DeltaTime)
     }
     else if (Distance <= DetectionRadius)
     {
-        // 3. PERSEGUIR (Velocidad zombie normal)
+        // 3. PERSEGUIR
         if (ZombiePawn->GetZombieState() != EZombieState::Chase)
         {
             ZombiePawn->SetZombieState(EZombieState::Chase);

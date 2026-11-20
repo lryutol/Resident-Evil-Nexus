@@ -1,6 +1,11 @@
-#include "NexusZombieSpawner.h"
-#include "NexusZombieFactory.h"
-#include "../Characters/NexusZombie.h"
+#include "NexusZombieSpawner.h" // SIEMPRE EL PRIMERO
+#include "NexusEnemyFactory.h"
+#include "../Characters/NexusZombie.h" 
+#include "../Characters/NexusTyrantT1104.h"
+#include "../Patterns/NexusTyrantBuilder.h"
+#include "../Core/NexusSubsystem.h"
+#include "../Core/NexusGameDirector.h"
+#include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
 #include "NavigationSystem.h"
 
@@ -8,84 +13,194 @@ ANexusZombieSpawner::ANexusZombieSpawner()
 {
     PrimaryActorTick.bCanEverTick = false;
 
-    // Valores por defecto
-    SpawnInterval = 2.0f;
-    SpawnRadius = 500.0f;
-    EnemiesPerWave = 5;
-    TimeBetweenWaves = 10.0f;
-    ZombieFactory = nullptr;
+    bIsBossSpawner = false;
+    bAutoStartWaves = true;
+    EnemiesPerWave = 10;
+    SpawnInterval = 1.0f;
+    DelayAfterWaveCleared = 3.0f;
 
-    CurrentWave = 0;
     EnemiesSpawnedThisWave = 0;
+    SpawnedOkThisWave = 0;
+    AliveInWave = 0;
+    bWaveActive = false;
+    bSpawning = false;
+    bLastWaveEmpty = false;
+    bBossSpawned = false;
+
+    CurrentFactory = nullptr;
+    Director = nullptr;
 }
 
 void ANexusZombieSpawner::BeginPlay()
 {
     Super::BeginPlay();
 
-    if (ZombieFactory)
+    Director = Cast<ANexusGameDirector>(UGameplayStatics::GetActorOfClass(this, ANexusGameDirector::StaticClass()));
+
+    if (UNexusSubsystem* Fachada = UNexusSubsystem::Get(this))
     {
-        // Iniciamos la primera oleada después de 2 segundos
+        Fachada->AttachObserver(this);
+
+        // Mas dificil = menos pausa entre oleadas
+        const float Rate = FMath::Max(0.1f, Fachada->GetDifficultyParams().SpawnRateMultiplier);
+        DelayAfterWaveCleared = DelayAfterWaveCleared / Rate;
+    }
+
+    if (EnemyFactoryClass) CurrentFactory = NewObject<UNexusEnemyFactory>(this, EnemyFactoryClass);
+
+    if (bAutoStartWaves && CurrentFactory)
+    {
         GetWorldTimerManager().SetTimer(WaveTimerHandle, this, &ANexusZombieSpawner::StartWave, 2.0f, false);
     }
-    else
+}
+
+void ANexusZombieSpawner::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    if (UNexusSubsystem* Fachada = UNexusSubsystem::Get(this)) Fachada->DetachObserver(this);
+    Super::EndPlay(EndPlayReason);
+}
+
+void ANexusZombieSpawner::OnGameStateChanged(ENexusGameState NewState)
+{
+    if (NewState == ENexusGameState::BossFight && bIsBossSpawner && !bBossSpawned)
     {
-        UE_LOG(LogTemp, Error, TEXT("NEXUS SPAWNER: ¡Falta asignar la ZombieFactory!"));
+        SpawnTyrant();
+        bBossSpawned = true;
+    }
+}
+
+void ANexusZombieSpawner::SpawnTyrant()
+{
+    if (!BossClass) return;
+    FActorSpawnParameters Params;
+    Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+    FVector SpawnLocation = GetActorLocation();
+    if (SpawnZones.Num() > 0 && SpawnZones[0])
+    {
+        SpawnLocation = SpawnZones[0]->GetRandomPointInZone();
+    }
+
+    ANexusTyrantT1104* Tyrant = GetWorld()->SpawnActor<ANexusTyrantT1104>(BossClass, SpawnLocation, FRotator::ZeroRotator, Params);
+
+    if (Tyrant)
+    {
+        UNexusTyrantBuilder* Builder = NewObject<UNexusTyrantBuilder>(this);
+        Builder->BuildBaseStats(Tyrant);
+        Builder->BuildArmor(Tyrant);
+        Builder->BuildClaws(Tyrant);
+        UE_LOG(LogTemp, Warning, TEXT("SPAWNER: El Tyrant T-1104 ha sido ensamblado y spawneado!"));
+    }
+}
+
+void ANexusZombieSpawner::SpawnMiniBoss(int32 Bracket)
+{
+    if (!CurrentFactory || SpawnZones.Num() == 0) return;
+
+    ANexusSpawnZone* Zone = SpawnZones[FMath::RandRange(0, SpawnZones.Num() - 1)];
+    if (!Zone) return;
+
+    ANexusZombie* MiniBoss = CurrentFactory->CreateEnemy(GetWorld(), Zone->GetRandomPointInZone(), FRotator::ZeroRotator, EZombieType::Special);
+    if (MiniBoss && Director)
+    {
+        Director->RegisterAlive();
+    }
+    UE_LOG(LogTemp, Warning, TEXT("SPAWNER: Mini-Boss %d spawneado!"), Bracket);
+}
+
+void ANexusZombieSpawner::TriggerWave()
+{
+    if (!bWaveActive)
+    {
+        StartWave();
     }
 }
 
 void ANexusZombieSpawner::StartWave()
 {
-    CurrentWave++;
+    if (!CurrentFactory || SpawnZones.Num() == 0) return;
+
+    bWaveActive = true;
+    bSpawning = true;
     EnemiesSpawnedThisWave = 0;
+    SpawnedOkThisWave = 0;
 
-    UE_LOG(LogTemp, Warning, TEXT("NEXUS SPAWNER: ¡Iniciando Oleada %d! Spawneando %d enemigos."), CurrentWave, EnemiesPerWave);
-
-    // Empezamos a spawnear zombies uno por uno cada 'SpawnInterval' segundos
     GetWorldTimerManager().SetTimer(SpawnTimerHandle, this, &ANexusZombieSpawner::SpawnZombie, SpawnInterval, true, 0.0f);
 }
 
 void ANexusZombieSpawner::SpawnZombie()
 {
-    if (!ZombieFactory) return;
-
-    EZombieType TypeToSpawn = EZombieType::Common;
-    TSubclassOf<ANexusZombie> ZombieClass = ZombieFactory->GetZombieClass(TypeToSpawn);
-
-    if (ZombieClass)
+    // El Director controla la cuota total de enemigos del nivel
+    if (Director && !Director->TryRegisterSpawn())
     {
-        FVector RandomOffset = FMath::VRand() * FMath::FRandRange(0.f, SpawnRadius);
-        FVector SpawnLocation = GetActorLocation() + RandomOffset;
+        FinishSpawning();
+        return;
+    }
 
-        // Buscamos el suelo usando el NavMesh para evitar que floten
-        FNavLocation NavLocation;
-        UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(GetWorld());
-        if (NavSys && NavSys->ProjectPointToNavigation(SpawnLocation, NavLocation, FVector(100, 100, 500)))
+    ANexusSpawnZone* Zone = SpawnZones[FMath::RandRange(0, SpawnZones.Num() - 1)];
+    FVector SpawnLocation = Zone ? Zone->GetRandomPointInZone() : GetActorLocation();
+
+    FNavLocation NavLocation;
+    if (UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(GetWorld()))
+    {
+        if (NavSys->ProjectPointToNavigation(SpawnLocation, NavLocation, FVector(100, 100, 500)))
         {
             SpawnLocation = NavLocation.Location;
         }
+    }
 
-        FActorSpawnParameters SpawnParams;
-        SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+    ANexusZombie* SpawnedEnemy = CurrentFactory->CreateEnemy(GetWorld(), SpawnLocation, FRotator::ZeroRotator, EZombieType::Common);
+    EnemiesSpawnedThisWave++;
 
-        GetWorld()->SpawnActor<ANexusZombie>(ZombieClass, SpawnLocation, FRotator::ZeroRotator, SpawnParams);
+    if (SpawnedEnemy)
+    {
+        SpawnedEnemy->SetOriginSpawner(this);
+        SpawnedOkThisWave++;
+        AliveInWave++;
+    }
+    else if (Director)
+    {
+        Director->UnregisterSpawn(); // fallo: devolvemos el cupo
+    }
 
-        EnemiesSpawnedThisWave++;
-        UE_LOG(LogTemp, Warning, TEXT("NEXUS SPAWNER: Zombie %d/%d spawneado."), EnemiesSpawnedThisWave, EnemiesPerWave);
-
-        // Si ya hemos spawneado todos los de esta oleada, detenemos el spawner y esperamos a la siguiente
-        if (EnemiesSpawnedThisWave >= EnemiesPerWave)
-        {
-            GetWorldTimerManager().ClearTimer(SpawnTimerHandle);
-            OnWaveFinished();
-        }
+    if (EnemiesSpawnedThisWave >= EnemiesPerWave)
+    {
+        FinishSpawning();
     }
 }
 
-void ANexusZombieSpawner::OnWaveFinished()
+void ANexusZombieSpawner::FinishSpawning()
 {
-    UE_LOG(LogTemp, Warning, TEXT("NEXUS SPAWNER: Oleada %d terminada. Esperando %f segundos para la siguiente..."), CurrentWave, TimeBetweenWaves);
+    GetWorldTimerManager().ClearTimer(SpawnTimerHandle);
+    bSpawning = false;
+    bLastWaveEmpty = (SpawnedOkThisWave == 0);
 
-    // Esperamos el tiempo configurado y volvemos a empezar
-    GetWorldTimerManager().SetTimer(WaveTimerHandle, this, &ANexusZombieSpawner::StartWave, TimeBetweenWaves, false);
+    if (AliveInWave <= 0)
+    {
+        OnWaveCleared();
+    }
+}
+
+void ANexusZombieSpawner::NotifyEnemyDied()
+{
+    AliveInWave = FMath::Max(0, AliveInWave - 1);
+
+    if (bWaveActive && !bSpawning && AliveInWave == 0)
+    {
+        OnWaveCleared();
+    }
+}
+
+void ANexusZombieSpawner::OnWaveCleared()
+{
+    bWaveActive = false;
+    UE_LOG(LogTemp, Warning, TEXT("SPAWNER: Oleada eliminada."));
+
+    // Si la ultima oleada no pudo spawnear nada, la cuota se agoto: no hay mas
+    if (bLastWaveEmpty) return;
+
+    if (bAutoStartWaves)
+    {
+        GetWorldTimerManager().SetTimer(WaveTimerHandle, this, &ANexusZombieSpawner::StartWave, DelayAfterWaveCleared, false);
+    }
 }

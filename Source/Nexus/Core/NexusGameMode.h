@@ -13,7 +13,8 @@ class ANexusGameMode : public AGameModeBase
 
 public:
 	ANexusGameMode();
+
+protected:
+	// Sobrescribimos BeginPlay para inicializar la Fachada
+	virtual void BeginPlay() override;
 };
-
-
-

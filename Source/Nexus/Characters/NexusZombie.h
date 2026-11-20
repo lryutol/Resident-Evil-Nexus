@@ -4,6 +4,10 @@
 #include "GameFramework/Character.h"
 #include "NexusZombie.generated.h"
 
+class ANexusGameDirector;
+class ANexusZombieSpawner;
+
+// PATRON STATE: estados del zombie. Downed se agrego al final para no mover los valores existentes
 UENUM(BlueprintType)
 enum class EZombieState : uint8
 {
@@ -11,7 +15,8 @@ enum class EZombieState : uint8
     Chase,
     Reaching,
     Attacking,
-    Dead
+    Dead,
+    Downed
 };
 
 UCLASS()
@@ -29,7 +34,12 @@ public:
     EZombieState GetZombieState() const { return CurrentState; }
     void SetZombieState(EZombieState NewState) { CurrentState = NewState; }
 
+    // El spawner que creo a este zombie (para avisarle cuando muere)
+    void SetOriginSpawner(ANexusZombieSpawner* Spawner) { OriginSpawner = Spawner; }
+
 protected:
+    virtual void BeginPlay() override;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Health")
     float MaxHealth;
 
@@ -66,5 +76,15 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
     float AttackDamage;
 
-    void Die();
+    UPROPERTY()
+    ANexusGameDirector* GameDirector;
+
+    UPROPERTY()
+    ANexusZombieSpawner* OriginSpawner;
+
+    // True si el ultimo impacto recibido fue en la cabeza
+    bool bLastHitWasHeadshot;
+
+    // Virtual: el Tyrant lo sobrescribe para su logica de inmortalidad
+    virtual void Die();
 };

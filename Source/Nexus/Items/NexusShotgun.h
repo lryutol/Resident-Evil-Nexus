@@ -11,5 +11,4 @@ class NEXUS_API ANexusShotgun : public ANexusWeapon
 
 public:
     ANexusShotgun();
-    virtual void FireWeapon() override;
 };

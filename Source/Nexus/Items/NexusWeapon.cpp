@@ -1,6 +1,7 @@
 #include "NexusWeapon.h"
 #include "DrawDebugHelpers.h"
 #include "../Characters/NexusCharacter.h"
+#include "../Patterns/HitscanStrategy.h" 
 #include "Camera/CameraComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Kismet/GameplayStatics.h" 
@@ -12,12 +13,18 @@ ANexusWeapon::ANexusWeapon()
     OwningCharacter = nullptr;
     WeaponRange = 1500.f;
     WeaponDamage = 20.f;
+
+    AmmoType = ENexusAmmoType::Pistol;
     MaxAmmo = 12;
     CurrentAmmo = MaxAmmo;
+    ReserveAmmo = 36;
+    MaxReserveAmmo = 96;
 
     WeaponOffsetLocation = FVector(0.f, 0.f, 0.f);
     WeaponOffsetRotation = FRotator(0.f, 0.f, 0.f);
     WeaponOffsetScale = FVector(1.0f, 1.0f, 1.0f);
+
+    FireStrategy = CreateDefaultSubobject<UHitscanStrategy>(TEXT("HitscanStrategy"));
 }
 
 void ANexusWeapon::AttachToCharacter(ANexusCharacter* Character)
@@ -29,44 +36,69 @@ void ANexusWeapon::AttachToCharacter(ANexusCharacter* Character)
         WeaponMesh->SetSimulatePhysics(false);
         WeaponMesh->SetGenerateOverlapEvents(false);
 
-        // Anclamos al hueso RightHand IGNORANDO su escala (el 100x de Mixamo)
         WeaponMesh->AttachToComponent(Character->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, TEXT("RightHand"));
-
-        // Aplicamos los valores exactos que configuraste en el socket
         WeaponMesh->SetRelativeLocation(WeaponOffsetLocation);
         WeaponMesh->SetRelativeRotation(WeaponOffsetRotation);
         WeaponMesh->SetRelativeScale3D(WeaponOffsetScale);
     }
 }
 
+void ANexusWeapon::SetEquipped(bool bEquipped)
+{
+    SetActorHiddenInGame(!bEquipped);
+}
+
+bool ANexusWeapon::AddReserveAmmo(int32 Amount)
+{
+    if (ReserveAmmo >= MaxReserveAmmo) return false;
+
+    ReserveAmmo = FMath::Min(MaxReserveAmmo, ReserveAmmo + Amount);
+    NotifyAmmoChanged();
+    return true;
+}
+
+void ANexusWeapon::AttachObserver(INexusObserver* Observer)
+{
+    if (Observer && !AmmoObservers.Contains(Observer))
+    {
+        AmmoObservers.Add(Observer);
+    }
+}
+
+void ANexusWeapon::DetachObserver(INexusObserver* Observer)
+{
+    if (Observer) AmmoObservers.Remove(Observer);
+}
+
+void ANexusWeapon::NotifyAmmoChanged()
+{
+    for (INexusObserver* Obs : AmmoObservers)
+    {
+        if (Obs) Obs->OnAmmoChanged(CurrentAmmo, ReserveAmmo);
+    }
+}
+
 void ANexusWeapon::FireWeapon()
 {
     if (CurrentAmmo <= 0) return;
+
     CurrentAmmo--;
+    NotifyAmmoChanged();
 
     if (!OwningCharacter) return;
 
-    FVector Start = OwningCharacter->GetFollowCamera()->GetComponentLocation();
-    FVector End = Start + (OwningCharacter->GetFollowCamera()->GetForwardVector() * WeaponRange);
-
-    FHitResult Hit;
-    FCollisionQueryParams Params;
-    Params.AddIgnoredActor(this);
-    Params.AddIgnoredActor(OwningCharacter);
-
-    if (GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+    if (FireStrategy)
     {
-        DrawDebugPoint(GetWorld(), Hit.ImpactPoint, 10.f, FColor::Red, false, 2.f);
-        AActor* HitActor = Hit.GetActor();
-        if (HitActor)
-        {
-            AController* InstigatorController = OwningCharacter->GetController();
-            UGameplayStatics::ApplyPointDamage(HitActor, WeaponDamage, (End - Start).GetSafeNormal(), Hit, InstigatorController, this, nullptr);
-        }
+        FireStrategy->ExecuteFire(this, OwningCharacter);
     }
 }
 
 void ANexusWeapon::Reload()
 {
-    if (CurrentAmmo < MaxAmmo) CurrentAmmo = MaxAmmo;
+    if (CurrentAmmo >= MaxAmmo || ReserveAmmo <= 0) return;
+
+    const int32 Taken = FMath::Min(MaxAmmo - CurrentAmmo, ReserveAmmo);
+    CurrentAmmo += Taken;
+    ReserveAmmo -= Taken;
+    NotifyAmmoChanged();
 }

@@ -17,3 +17,22 @@ Thumbs.db
 *.lib
 *.dll
 *.exe
+
+# Asset packs de Marketplace (pesados, re-descargables desde Epic)
+Content/AbandonedPowerPlant/
+Content/ModularSciFiStation/
+Content/UndergroundTunnel/
+
+# Generados por Unreal
+Binaries/
+Intermediate/
+Saved/
+DerivedDataCache/
+Build/
+.vs/
+*.sln
+*.suo
+*.user
+*.VC.db
+*.opensdf
+*.sdf

@@ -18,7 +18,6 @@ class NEXUS_API UNexusItemData : public UDataAsset
     GENERATED_BODY()
 
 public:
-    // --- DATOS DEL ÍTEM ---
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Info")
     FText ItemName;
 
@@ -31,11 +30,13 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Item Info")
     class UTexture2D* ItemIcon;
 
-    // --- DATOS DEL ARMA (Solo si es tipo Weapon) ---
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon Settings")
     TSubclassOf<class ANexusWeapon> WeaponClass;
 
-    // --- DATOS DE LA CUADRÍCULA (RE4) ---
+    // Slot de la barra inferior: 1 = pistola, 2 = rifle/escopeta
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Hotbar")
+    int32 HotbarSlot = 1;
+
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Grid Settings")
-    FIntPoint GridSize; // Ej: X=2, Y=1 para un arma horizontal
+    FIntPoint GridSize;
 };

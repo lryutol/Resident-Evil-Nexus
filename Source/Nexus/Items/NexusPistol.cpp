@@ -17,12 +17,16 @@ ANexusPistol::ANexusPistol()
     PistolMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     PistolMesh->SetSimulatePhysics(false);
 
+    AmmoType = ENexusAmmoType::Pistol;
     WeaponDamage = 25.f;
     MaxAmmo = 12;
     CurrentAmmo = MaxAmmo;
+    ReserveAmmo = 36;
+    MaxReserveAmmo = 96;
 
-    // Tus valores exactos que te funcionaron en el socket
     WeaponOffsetLocation = FVector(2.f, -13.f, 3.f);
     WeaponOffsetRotation = FRotator(-180.f, -90.f, 90.f);
     WeaponOffsetScale = FVector(0.015f, 0.015f, 0.015f);
+
+    // La pistola usa el HitscanStrategy por defecto (clase base)
 }

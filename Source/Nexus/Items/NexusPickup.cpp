@@ -11,11 +11,24 @@
 
 ANexusPickup::ANexusPickup()
 {
-    PrimaryActorTick.bCanEverTick = false;
+    // Activamos el Tick para que pueda rotar
+    PrimaryActorTick.bCanEverTick = true;
 
     PickupType = ENexusPickupType::Herb;
     HourglassSeconds = 30.f;
     AmmoMagazines = 1;
+
+    // Configuración de giro y ajuste al suelo
+    RotationSpeed = 45.f;
+    bSnapToGround = true;
+
+    // <<< TUS ESCALAS EXACTAS APLICADAS AQUÍ >>>
+    PistolAmmoScale = FVector(1.5f, 1.5f, 1.5f);
+    RifleAmmoScale = FVector(1.8f, 1.8f, 1.8f);
+    ShotgunAmmoScale = FVector(1.5f, 1.5f, 1.5f);
+    HerbScale = FVector(5.0f, 5.0f, 5.0f);
+    GrenadeScale = FVector(0.07f, 0.07f, 0.07f);
+    HourglassScale = FVector(0.2f, 0.2f, 0.2f);
 
     Trigger = CreateDefaultSubobject<USphereComponent>(TEXT("Trigger"));
     Trigger->InitSphereRadius(90.f);
@@ -27,23 +40,64 @@ ANexusPickup::ANexusPickup()
     Mesh->SetupAttachment(RootComponent);
     Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
+    // Bajamos un poco el modelo para que quede centrado dentro de la esfera de recogida
+    Mesh->SetRelativeLocation(FVector(0.f, 0.f, -20.f));
+
     Glow = CreateDefaultSubobject<UPointLightComponent>(TEXT("Glow"));
     Glow->SetupAttachment(RootComponent);
-    Glow->SetIntensity(2500.f);
-    Glow->SetAttenuationRadius(250.f);
+    Glow->SetIntensity(1500.f);
+    Glow->SetAttenuationRadius(200.f);
 
-    static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeAsset(TEXT("/Engine/BasicShapes/Cube.Cube"));
-    static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereAsset(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
-    static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderAsset(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
-    CubeMesh = CubeAsset.Succeeded() ? CubeAsset.Object : nullptr;
-    SphereMesh = SphereAsset.Succeeded() ? SphereAsset.Object : nullptr;
-    CylinderMesh = CylinderAsset.Succeeded() ? CylinderAsset.Object : nullptr;
+    // Carga de los modelos 3D
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> PistolAmmoAsset(TEXT("/Game/modelos_varios/9MM_Ammo.9MM_Ammo"));
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> RifleAmmoAsset(TEXT("/Game/modelos_varios/308Win_Ammo.308Win_Ammo"));
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> ShotgunAmmoAsset(TEXT("/Game/modelos_varios/12x70_Ammo.12x70_Ammo"));
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> HerbAsset(TEXT("/Game/modelos_varios/HealthPack/HealthPack.HealthPack"));
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> GrenadeAsset(TEXT("/Game/modelos_varios/Granate/Model.Model"));
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> HourglassAsset(TEXT("/Game/modelos_varios/Hourglass_LowQ.Hourglass_LowQ"));
+
+    PistolAmmoMesh = PistolAmmoAsset.Succeeded() ? PistolAmmoAsset.Object : nullptr;
+    RifleAmmoMesh = RifleAmmoAsset.Succeeded() ? RifleAmmoAsset.Object : nullptr;
+    ShotgunAmmoMesh = ShotgunAmmoAsset.Succeeded() ? ShotgunAmmoAsset.Object : nullptr;
+    HerbMesh = HerbAsset.Succeeded() ? HerbAsset.Object : nullptr;
+    GrenadeMesh = GrenadeAsset.Succeeded() ? GrenadeAsset.Object : nullptr;
+    HourglassMesh = HourglassAsset.Succeeded() ? HourglassAsset.Object : nullptr;
 }
 
 void ANexusPickup::BeginPlay()
 {
     Super::BeginPlay();
+
+    // <<< LÓGICA PARA PEGARSE AL SUELO >>>
+    if (bSnapToGround)
+    {
+        FVector Start = GetActorLocation();
+        FVector End = Start - FVector(0.f, 0.f, 1000.f);
+
+        FHitResult HitResult;
+        FCollisionQueryParams Params;
+        Params.AddIgnoredActor(this);
+
+        // Si detecta suelo debajo...
+        if (GetWorld()->LineTraceSingleByChannel(HitResult, Start, End, ECC_Visibility, Params))
+        {
+            // Lo colocamos justo encima del suelo
+            SetActorLocation(HitResult.ImpactPoint + FVector(0.f, 0.f, 45.f));
+        }
+    }
+
     ApplyVisuals();
+}
+
+void ANexusPickup::Tick(float DeltaTime)
+{
+    Super::Tick(DeltaTime);
+
+    // <<< LÓGICA DE GIRO ELEGANTE >>>
+    if (RotationSpeed != 0.f)
+    {
+        AddActorLocalRotation(FRotator(0.f, RotationSpeed * DeltaTime, 0.f));
+    }
 }
 
 void ANexusPickup::SetPickupType(ENexusPickupType NewType)
@@ -54,24 +108,48 @@ void ANexusPickup::SetPickupType(ENexusPickupType NewType)
 
 void ANexusPickup::ApplyVisuals()
 {
-    UStaticMesh* ChosenMesh = CubeMesh;
+    UStaticMesh* ChosenMesh = nullptr;
     FLinearColor Color = FLinearColor::White;
-    FVector Scale(0.25f, 0.25f, 0.25f);
+    FVector ChosenScale(1.0f, 1.0f, 1.0f);
 
     switch (PickupType)
     {
-    case ENexusPickupType::PistolAmmo:  ChosenMesh = CubeMesh;     Color = FLinearColor(1.f, 0.9f, 0.1f); break;  // amarillo
-    case ENexusPickupType::RifleAmmo:   ChosenMesh = CubeMesh;     Color = FLinearColor(1.f, 0.4f, 0.0f); Scale = FVector(0.3f, 0.2f, 0.2f); break;  // naranja
-    case ENexusPickupType::ShotgunAmmo: ChosenMesh = CubeMesh;     Color = FLinearColor(1.f, 0.1f, 0.1f); Scale = FVector(0.2f, 0.3f, 0.2f); break;  // rojo
-    case ENexusPickupType::Herb:        ChosenMesh = SphereMesh;   Color = FLinearColor(0.1f, 1.f, 0.2f); break;  // verde
-    case ENexusPickupType::Grenade:     ChosenMesh = SphereMesh;   Color = FLinearColor(0.7f, 0.2f, 1.f); Scale = FVector(0.2f, 0.2f, 0.2f); break;  // violeta
-    case ENexusPickupType::Hourglass:   ChosenMesh = CylinderMesh; Color = FLinearColor(0.2f, 0.6f, 1.f); Scale = FVector(0.2f, 0.2f, 0.4f); break;  // azul
+    case ENexusPickupType::PistolAmmo:
+        ChosenMesh = PistolAmmoMesh;
+        Color = FLinearColor(1.f, 0.9f, 0.1f); // Amarillo
+        ChosenScale = PistolAmmoScale;
+        break;
+    case ENexusPickupType::RifleAmmo:
+        ChosenMesh = RifleAmmoMesh;
+        Color = FLinearColor(1.f, 0.4f, 0.0f); // Naranja
+        ChosenScale = RifleAmmoScale;
+        break;
+    case ENexusPickupType::ShotgunAmmo:
+        ChosenMesh = ShotgunAmmoMesh;
+        Color = FLinearColor(1.f, 0.1f, 0.1f); // Rojo
+        ChosenScale = ShotgunAmmoScale;
+        break;
+    case ENexusPickupType::Herb:
+        ChosenMesh = HerbMesh;
+        Color = FLinearColor(0.1f, 1.f, 0.2f); // Verde
+        ChosenScale = HerbScale;
+        break;
+    case ENexusPickupType::Grenade:
+        ChosenMesh = GrenadeMesh;
+        Color = FLinearColor(0.7f, 0.2f, 1.f); // Violeta
+        ChosenScale = GrenadeScale;
+        break;
+    case ENexusPickupType::Hourglass:
+        ChosenMesh = HourglassMesh;
+        Color = FLinearColor(0.2f, 0.6f, 1.f); // Azul
+        ChosenScale = HourglassScale;
+        break;
     }
 
     if (Mesh && ChosenMesh)
     {
         Mesh->SetStaticMesh(ChosenMesh);
-        Mesh->SetWorldScale3D(Scale);
+        Mesh->SetWorldScale3D(ChosenScale);
     }
     if (Glow)
     {

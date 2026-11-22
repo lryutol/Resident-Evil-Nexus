@@ -20,6 +20,10 @@ public:
 protected:
     virtual void BeginPlay() override;
 
+    // <<< AÑADIDO: Variable para asignar el WBP_HUD en el editor >>>
+    UPROPERTY(EditDefaultsOnly, Category = "UI")
+    TSubclassOf<UUserWidget> HUDWidgetClass;
+
     UPROPERTY(EditDefaultsOnly, Category = "UI")
     TSubclassOf<UUserWidget> CrosshairWidgetClass;
 
@@ -27,6 +31,10 @@ protected:
     TSubclassOf<UNexusInventoryWidget> InventoryWidgetClass;
 
 private:
+    // <<< AÑADIDO: Puntero para guardar el HUD creado >>>
+    UPROPERTY()
+    UUserWidget* HUDWidget;
+
     UPROPERTY()
     UUserWidget* CrosshairWidget;
 

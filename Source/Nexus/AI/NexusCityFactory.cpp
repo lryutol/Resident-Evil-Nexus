@@ -11,7 +11,7 @@ ANexusZombie* UNexusCityFactory::CreateEnemy(UWorld* World, FVector SpawnLocatio
     {
         FActorSpawnParameters Params;
         Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-        return World->SpawnActor<ANexusZombie>(ClassToSpawn, SpawnLocation, SpawnRotation, Params);
+        return World->SpawnActor<ANexusZombie>(ClassToSpawn, SpawnLocation, FRotator::ZeroRotator, Params);
     }
     return nullptr;
 }

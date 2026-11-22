@@ -4,12 +4,16 @@
 #include "NexusZombie.h"
 #include "NexusTyrantT1104.generated.h"
 
-// PATRON STATE del jefe: Active (pelea) o Downed (inconsciente e inmune)
+class UAnimMontage;
+class USoundBase;
+
+// PATRON STATE del jefe: Active (pelea), Downed (inconsciente e inmune), Roaring (ruge al levantarse, inmune)
 UENUM(BlueprintType)
 enum class ETyrantPhase : uint8
 {
     Active,
-    Downed
+    Downed,
+    Roaring
 };
 
 UCLASS()
@@ -30,6 +34,7 @@ protected:
 
     void EnterDownedPhase();
     void ExitDownedPhase();
+    void FinishRoar();
 
     // Segundos que pasa inconsciente
     UPROPERTY(EditAnywhere, Category = "Tyrant")
@@ -39,10 +44,22 @@ protected:
     UPROPERTY(EditAnywhere, Category = "Tyrant")
     float HealthLossPerRevive;
 
+    // Animacion y sonido de rugido al levantarse (se asignan en BP_Tyrant)
+    UPROPERTY(EditDefaultsOnly, Category = "Tyrant")
+    UAnimMontage* RoarMontage;
+
+    UPROPERTY(EditDefaultsOnly, Category = "Tyrant")
+    USoundBase* RoarSound;
+
+    // Duracion del rugido si no hay montaje asignado
+    UPROPERTY(EditDefaultsOnly, Category = "Tyrant")
+    float DefaultRoarDuration;
+
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tyrant")
     ETyrantPhase Phase;
 
     float OriginalMaxHealth;
     int32 ReviveCount;
     FTimerHandle DownedTimer;
+    FTimerHandle RoarTimer;
 };

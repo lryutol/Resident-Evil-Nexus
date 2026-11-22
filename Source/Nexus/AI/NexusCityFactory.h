@@ -3,7 +3,7 @@
 #include "NexusEnemyFactory.h"
 #include "NexusCityFactory.generated.h"
 
-UCLASS()
+UCLASS(Blueprintable)
 class NEXUS_API UNexusCityFactory : public UNexusEnemyFactory
 {
     GENERATED_BODY()

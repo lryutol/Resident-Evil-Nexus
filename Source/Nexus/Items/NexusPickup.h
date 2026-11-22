@@ -29,6 +29,7 @@ class NEXUS_API ANexusPickup : public AActor
 public:
     ANexusPickup();
 
+    virtual void Tick(float DeltaTime) override;
     void SetPickupType(ENexusPickupType NewType);
     virtual void NotifyActorBeginOverlap(AActor* OtherActor) override;
 
@@ -47,22 +48,56 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pickup")
     ENexusPickupType PickupType;
 
-    // Segundos que suma el reloj de arena
     UPROPERTY(EditAnywhere, Category = "Pickup")
     float HourglassSeconds;
 
-    // Cargadores que da un pickup de municion
     UPROPERTY(EditAnywhere, Category = "Pickup")
     int32 AmmoMagazines;
 
+    // <<< NUEVAS VARIABLES PARA GIRO Y SUELO >>>
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pickup|Animation")
+    float RotationSpeed;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pickup|Animation")
+    bool bSnapToGround;
+
+    // Escalas independientes
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pickup|Scales")
+    FVector PistolAmmoScale;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pickup|Scales")
+    FVector RifleAmmoScale;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pickup|Scales")
+    FVector ShotgunAmmoScale;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pickup|Scales")
+    FVector HerbScale;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pickup|Scales")
+    FVector GrenadeScale;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Pickup|Scales")
+    FVector HourglassScale;
+
+    // Punteros a los modelos 3D
     UPROPERTY()
-    UStaticMesh* CubeMesh;
+    UStaticMesh* PistolAmmoMesh;
 
     UPROPERTY()
-    UStaticMesh* SphereMesh;
+    UStaticMesh* RifleAmmoMesh;
 
     UPROPERTY()
-    UStaticMesh* CylinderMesh;
+    UStaticMesh* ShotgunAmmoMesh;
+
+    UPROPERTY()
+    UStaticMesh* HerbMesh;
+
+    UPROPERTY()
+    UStaticMesh* GrenadeMesh;
+
+    UPROPERTY()
+    UStaticMesh* HourglassMesh;
 
     void ApplyVisuals();
 };

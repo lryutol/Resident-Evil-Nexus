@@ -7,6 +7,7 @@
 #include "NexusWeapon.generated.h"
 
 class UMeshComponent;
+class USoundBase;
 class ANexusCharacter;
 
 UENUM(BlueprintType)
@@ -86,6 +87,18 @@ protected:
 
     UPROPERTY(EditDefaultsOnly, Category = "Weapon|Transform")
     FVector WeaponOffsetScale;
+
+    // --- SONIDOS (se asignan en el Blueprint hijo de cada arma) ---
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Sound")
+    USoundBase* FireSound;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Sound")
+    USoundBase* ReloadSound;
+
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Sound")
+    USoundBase* EmptySound;
+
+    void PlayWeaponSound(USoundBase* SoundToPlay);
 
     TArray<INexusObserver*> AmmoObservers;
     void NotifyAmmoChanged();

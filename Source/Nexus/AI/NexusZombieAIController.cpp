@@ -7,6 +7,10 @@
 ANexusZombieAIController::ANexusZombieAIController()
 {
     PrimaryActorTick.bCanEverTick = true;
+
+    ZombiePawn = nullptr;
+    PlayerTarget = nullptr;
+
     AttackCooldown = 2.0f;
     TimeSinceLastAttack = 0.f;
 
@@ -14,6 +18,14 @@ ANexusZombieAIController::ANexusZombieAIController()
     ReachingRadius = 160.f;
     AttackRadius = 100.f;
 
+    ChaseSpeed = 50.f;
+    ReachSpeed = 20.f;
+    bSpeedsReady = false;
+
+    RepathTimer = 0.f;
+    RepathInterval = 0.25f;
+
+    CurrentWanderTarget = FVector::ZeroVector;
     WanderTimer = 0.f;
     WanderInterval = 4.0f;
 }
@@ -42,9 +54,21 @@ void ANexusZombieAIController::Tick(float DeltaTime)
         return;
     }
 
+    // Cada enemigo conserva la velocidad que tiene en su Blueprint
+    if (!bSpeedsReady)
+    {
+        ChaseSpeed = FMath::Max(10.f, ZombiePawn->GetCharacterMovement()->MaxWalkSpeed);
+        ReachSpeed = ChaseSpeed * 0.4f;
+        bSpeedsReady = true;
+    }
+
     TimeSinceLastAttack += DeltaTime;
 
-    float Distance = FVector::Dist(ZombiePawn->GetActorLocation(), PlayerTarget->GetActorLocation());
+    RepathTimer += DeltaTime;
+    const bool bRepath = (RepathTimer >= RepathInterval);
+    if (bRepath) RepathTimer = 0.f;
+
+    const float Distance = FVector::Dist(ZombiePawn->GetActorLocation(), PlayerTarget->GetActorLocation());
 
     if (Distance <= AttackRadius)
     {
@@ -69,27 +93,37 @@ void ANexusZombieAIController::Tick(float DeltaTime)
         {
             ZombiePawn->SetZombieState(EZombieState::Reaching);
             ZombiePawn->PlayReachMontage();
-            ZombiePawn->GetCharacterMovement()->MaxWalkSpeed = 20.f;
+            ZombiePawn->GetCharacterMovement()->MaxWalkSpeed = ReachSpeed;
         }
-        MoveToActor(PlayerTarget, 10.f);
+        if (bRepath) MoveToActor(PlayerTarget, 10.f);
     }
     else if (Distance <= DetectionRadius)
     {
-        // 3. PERSEGUIR
+        // 3. PERSEGUIR directo al jugador
         if (ZombiePawn->GetZombieState() != EZombieState::Chase)
         {
             ZombiePawn->SetZombieState(EZombieState::Chase);
-            ZombiePawn->GetCharacterMovement()->MaxWalkSpeed = 50.f;
+            ZombiePawn->GetCharacterMovement()->MaxWalkSpeed = ChaseSpeed;
         }
-        MoveToActor(PlayerTarget, 10.f);
+        if (bRepath) MoveToActor(PlayerTarget, 10.f);
+    }
+    else if (ZombiePawn->HasHuntTarget())
+    {
+        // 4. CAZAR: el Director indica un punto alrededor del jugador (para rodearlo)
+        if (ZombiePawn->GetZombieState() != EZombieState::Chase)
+        {
+            ZombiePawn->SetZombieState(EZombieState::Chase);
+            ZombiePawn->GetCharacterMovement()->MaxWalkSpeed = ChaseSpeed;
+        }
+        if (bRepath) MoveToLocation(ZombiePawn->GetHuntTarget(), 120.f);
     }
     else
     {
-        // 4. RONDAR
+        // 5. RONDAR (si no hay Director en el nivel)
         if (ZombiePawn->GetZombieState() != EZombieState::Idle)
         {
             ZombiePawn->SetZombieState(EZombieState::Idle);
-            ZombiePawn->GetCharacterMovement()->MaxWalkSpeed = 50.f;
+            ZombiePawn->GetCharacterMovement()->MaxWalkSpeed = ChaseSpeed;
         }
 
         WanderTimer += DeltaTime;

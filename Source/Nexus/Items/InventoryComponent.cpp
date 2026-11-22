@@ -39,9 +39,14 @@ void UInventoryComponent::AddItem(UNexusItemData* NewItem)
         }
     }
 
+    if (NewItem->ItemType == EItemType::Weapon && !Spawned)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("INVENTARIO: '%s' es un arma pero no se pudo crear. Revisa 'Weapon Class' en su Data Asset."), *NewItem->ItemName.ToString());
+    }
+
     Items.Add(NewItem);
     SpawnedWeapons.Add(Spawned);
-    UE_LOG(LogTemp, Warning, TEXT("NEXUS: Item '%s' anadido al inventario."), *NewItem->ItemName.ToString());
+    UE_LOG(LogTemp, Warning, TEXT("INVENTARIO: '%s' anadido (slot de barra %d)."), *NewItem->ItemName.ToString(), NewItem->HotbarSlot);
 
     if (Items.Num() == 1)
     {
@@ -72,6 +77,9 @@ void UInventoryComponent::EquipIndex(int32 Index)
     {
         EquippedWeapon->SetEquipped(true);
     }
+
+    const FString WeaponName = EquippedWeapon ? EquippedWeapon->GetName() : FString(TEXT("NINGUNA"));
+    UE_LOG(LogTemp, Warning, TEXT("INVENTARIO: equipado el indice %d, arma: %s"), Index, *WeaponName);
 }
 
 void UInventoryComponent::CycleItem(int32 Direction)
@@ -95,7 +103,11 @@ void UInventoryComponent::SelectSlot(int32 Slot)
         }
     }
 
-    if (First < 0) return;
+    if (First < 0)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("INVENTARIO: ningun item tiene Hotbar Slot = %d."), Slot);
+        return;
+    }
 
     const bool bCurrentInSlot = Items.IsValidIndex(CurrentItemIndex)
         && Items[CurrentItemIndex]

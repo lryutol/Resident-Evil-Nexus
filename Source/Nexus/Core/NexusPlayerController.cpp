@@ -6,6 +6,9 @@
 
 ANexusPlayerController::ANexusPlayerController()
 {
+    // <<< AÑADIDO: Inicializar el puntero >>>
+    HUDWidget = nullptr;
+
     CrosshairWidget = nullptr;
     InventoryWidget = nullptr;
     bIsInventoryOpen = false;
@@ -14,6 +17,18 @@ ANexusPlayerController::ANexusPlayerController()
 void ANexusPlayerController::BeginPlay()
 {
     Super::BeginPlay();
+
+    // <<< AÑADIDO: Lógica para crear y mostrar el HUD al inicio >>>
+    if (HUDWidgetClass)
+    {
+        HUDWidget = CreateWidget<UUserWidget>(this, HUDWidgetClass);
+        if (HUDWidget)
+        {
+            HUDWidget->AddToViewport();
+            HUDWidget->SetVisibility(ESlateVisibility::Visible); // Que sea visible por defecto
+        }
+    }
+    // -------------------------------------------------------------
 
     if (CrosshairWidgetClass)
     {

@@ -7,7 +7,7 @@
 
 class ANexusZombie;
 
-UCLASS(Abstract, BlueprintType)
+UCLASS(Abstract, Blueprintable, BlueprintType)
 class NEXUS_API UNexusEnemyFactory : public UObject
 {
     GENERATED_BODY()

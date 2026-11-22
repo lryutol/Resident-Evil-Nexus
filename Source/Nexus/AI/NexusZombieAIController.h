@@ -16,7 +16,10 @@ public:
 protected:
     virtual void BeginPlay() override;
 
+    UPROPERTY()
     class ANexusZombie* ZombiePawn;
+
+    UPROPERTY()
     class ACharacter* PlayerTarget;
 
     float AttackCooldown;
@@ -24,6 +27,15 @@ protected:
     float DetectionRadius;
     float ReachingRadius;
     float AttackRadius;
+
+    // Velocidades propias de cada enemigo (se leen del Blueprint al empezar)
+    float ChaseSpeed;
+    float ReachSpeed;
+    bool bSpeedsReady;
+
+    // Cada cuanto se recalcula la ruta (evita recalcular en cada frame)
+    float RepathTimer;
+    float RepathInterval;
 
     FVector CurrentWanderTarget;
     float WanderTimer;

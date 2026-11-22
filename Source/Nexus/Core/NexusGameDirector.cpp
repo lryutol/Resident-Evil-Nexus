@@ -1,6 +1,8 @@
 #include "NexusGameDirector.h"
 #include "NexusSubsystem.h"
 #include "TimerManager.h"
+#include "NavigationSystem.h"
+#include "Kismet/GameplayStatics.h"
 #include "../AI/NexusZombieSpawner.h"
 #include "../Characters/NexusZombie.h"
 #include "../Characters/NexusZombieSpecial.h"
@@ -23,6 +25,12 @@ ANexusGameDirector::ANexusGameDirector()
     BossPoints = 2000;
     HeadshotBonusPoints = 50;
     ComboWindow = 6.f;
+
+    bHuntEnabled = true;
+    HuntUpdateInterval = 1.0f;
+    SurroundRadius = 600.f;
+    SurroundSpinPerUpdate = 20.f;
+    SurroundAngleOffset = 0.f;
 
     KillCount = 0;
     Score = 0;
@@ -53,6 +61,7 @@ void ANexusGameDirector::BeginPlay()
     TimeRemaining = InitialTime;
     bLevelFinished = false;
     // CellsTotal/CellsRemaining NO se reinician: las celdas se registran en su propio BeginPlay
+    // ActiveEnemies NO se reinicia: los enemigos colocados en el mapa se registran en su BeginPlay
 
     // Estrategias de loot (Patron Strategy), guardadas en un UPROPERTY para el GC
     UPistolLootStrategy* Pistol = NewObject<UPistolLootStrategy>(this);
@@ -93,12 +102,20 @@ void ANexusGameDirector::BeginPlay()
         GetWorldTimerManager().SetTimer(ExtraWaveTimer, this, &ANexusGameDirector::TriggerExtraWaves, ExtraWaveInterval, true);
     }
 
+    // Caza: el Director guia a los enemigos hacia el jugador
+    if (bHuntEnabled)
+    {
+        GetWorldTimerManager().SetTimer(HuntTimer, this, &ANexusGameDirector::UpdateHunt, FMath::Max(0.2f, HuntUpdateInterval), true, 0.5f);
+    }
+
     NotifyUIKillCount();
     NotifyUIScore();
 }
 
 void ANexusGameDirector::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+    GetWorldTimerManager().ClearTimer(HuntTimer);
+
     if (UNexusSubsystem* Fachada = UNexusSubsystem::Get(this))
     {
         Fachada->DetachObserver(this);
@@ -205,6 +222,77 @@ void ANexusGameDirector::AddBonusTime(float Seconds)
     }
 }
 
+// ---------- Caza de enemigos ----------
+
+void ANexusGameDirector::RegisterEnemy(ANexusZombie* Enemy)
+{
+    if (Enemy)
+    {
+        ActiveEnemies.AddUnique(Enemy);
+    }
+}
+
+void ANexusGameDirector::UnregisterEnemy(ANexusZombie* Enemy)
+{
+    if (Enemy)
+    {
+        ActiveEnemies.Remove(Enemy);
+    }
+}
+
+void ANexusGameDirector::UpdateHunt()
+{
+    if (bLevelFinished) return;
+
+    APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
+    if (!PlayerPawn) return;
+
+    // Limpiamos enemigos destruidos o muertos
+    for (int32 i = ActiveEnemies.Num() - 1; i >= 0; --i)
+    {
+        ANexusZombie* Candidate = ActiveEnemies[i];
+        if (!IsValid(Candidate) || Candidate->GetZombieState() == EZombieState::Dead)
+        {
+            ActiveEnemies.RemoveAt(i);
+        }
+    }
+
+    const int32 EnemyCount = ActiveEnemies.Num();
+    if (EnemyCount == 0) return;
+
+    // El circulo gira un poco en cada actualizacion
+    SurroundAngleOffset = FMath::Fmod(SurroundAngleOffset + SurroundSpinPerUpdate, 360.f);
+
+    const FVector PlayerLocation = PlayerPawn->GetActorLocation();
+    UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(GetWorld());
+
+    for (int32 Index = 0; Index < EnemyCount; ++Index)
+    {
+        // Reparto en circulo alrededor del jugador, en 3 anillos de radio
+        const float AngleDegrees = SurroundAngleOffset + (360.f / EnemyCount) * Index;
+        const float AngleRadians = FMath::DegreesToRadians(AngleDegrees);
+        const float RingRadius = SurroundRadius + 100.f * (Index % 3);
+
+        FVector TargetPoint = PlayerLocation + FVector(FMath::Cos(AngleRadians), FMath::Sin(AngleRadians), 0.f) * RingRadius;
+
+        if (NavSys)
+        {
+            FNavLocation NavPoint;
+            if (NavSys->ProjectPointToNavigation(TargetPoint, NavPoint, FVector(300.f, 300.f, 500.f)))
+            {
+                TargetPoint = NavPoint.Location;
+            }
+            else
+            {
+                // Sin NavMesh en ese punto: va directo hacia el jugador
+                TargetPoint = PlayerLocation;
+            }
+        }
+
+        ActiveEnemies[Index]->SetHuntTarget(TargetPoint);
+    }
+}
+
 // ---------- Cupos de enemigos ----------
 
 int32 ANexusGameDirector::CountPendingMiniBosses() const
@@ -267,6 +355,8 @@ void ANexusGameDirector::NotifyEnemyKilled(ANexusZombie* DeadEnemy, bool bHeadsh
 
     const bool bIsBoss = Cast<ANexusTyrantT1104>(DeadEnemy) != nullptr;
     const bool bIsSpecial = Cast<ANexusZombieSpecial>(DeadEnemy) != nullptr;
+
+    UnregisterEnemy(DeadEnemy);
 
     // El Tyrant no se registra en la cuota
     if (!bIsBoss) UnregisterSpawn();

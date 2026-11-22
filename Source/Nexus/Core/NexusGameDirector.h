@@ -48,6 +48,10 @@ public:
     void UnregisterSpawn();
     void RegisterAlive();
 
+    // Registro de enemigos vivos: el Director los guia hacia el jugador
+    void RegisterEnemy(ANexusZombie* Enemy);
+    void UnregisterEnemy(ANexusZombie* Enemy);
+
     // La UI se suscribe aqui
     void AttachUI(INexusObserver* UI);
     void DetachUI(INexusObserver* UI);
@@ -105,9 +109,30 @@ protected:
     // Segundos que dura la racha sin matar antes de perderse
     UPROPERTY(EditAnywhere, Category = "Director|Score") float ComboWindow;
 
+    // ---------- CAZA: el Director guia a los enemigos hacia el jugador ----------
+    // Si esta desmarcado, los enemigos solo rondan
+    UPROPERTY(EditAnywhere, Category = "Director|Hunt")
+    bool bHuntEnabled;
+
+    // Cada cuantos segundos se reasignan los puntos de ataque
+    UPROPERTY(EditAnywhere, Category = "Director|Hunt")
+    float HuntUpdateInterval;
+
+    // Distancia al jugador del primer anillo de enemigos
+    UPROPERTY(EditAnywhere, Category = "Director|Hunt")
+    float SurroundRadius;
+
+    // Grados que gira el circulo en cada actualizacion
+    UPROPERTY(EditAnywhere, Category = "Director|Hunt")
+    float SurroundSpinPerUpdate;
+
     // ---------- ESTADO ----------
     UPROPERTY(VisibleAnywhere, Category = "Director")
     int32 KillCount;
+
+    // Enemigos vivos registrados (UPROPERTY: se limpia sola si un enemigo se destruye)
+    UPROPERTY()
+    TArray<ANexusZombie*> ActiveEnemies;
 
     int32 Score;
     int32 ComboCount;
@@ -117,6 +142,7 @@ protected:
     int32 CellsTotal;
     int32 CellsRemaining;
     bool bLevelFinished;
+    float SurroundAngleOffset;
 
     // Estrategias de Loot (Patron Strategy)
     INexusLootStrategy* PistolLoot;
@@ -135,6 +161,7 @@ protected:
     FTimerHandle BossDefeatedTimer;
     FTimerHandle FinalBossTimer;
     FTimerHandle ExtraWaveTimer;
+    FTimerHandle HuntTimer;
 
     void NotifyUIKillCount();
     void NotifyUIScore();
@@ -144,4 +171,5 @@ protected:
     void HandleBossPhase();
     void TriggerExtraWaves();
     void FinishScenario();
+    void UpdateHunt();
 };

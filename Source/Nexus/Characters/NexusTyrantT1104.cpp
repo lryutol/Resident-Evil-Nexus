@@ -1,6 +1,8 @@
 #include "NexusTyrantT1104.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
+#include "Animation/AnimMontage.h"
+#include "Sound/SoundBase.h"
 #include "TimerManager.h"
 #include "../Core/NexusGameDirector.h"
 
@@ -14,6 +16,9 @@ ANexusTyrantT1104::ANexusTyrantT1104()
 
     DownedDuration = 15.f;
     HealthLossPerRevive = 0.05f;
+    RoarMontage = nullptr;
+    RoarSound = nullptr;
+    DefaultRoarDuration = 2.5f;
     Phase = ETyrantPhase::Active;
     OriginalMaxHealth = MaxHealth;
     ReviveCount = 0;
@@ -30,8 +35,8 @@ void ANexusTyrantT1104::BeginPlay()
 
 float ANexusTyrantT1104::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
-    // Inconsciente = inmune
-    if (Phase == ETyrantPhase::Downed) return 0.f;
+    // Inconsciente o rugiendo = inmune
+    if (Phase != ETyrantPhase::Active) return 0.f;
 
     return Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
 }
@@ -50,7 +55,7 @@ void ANexusTyrantT1104::Die()
 
 void ANexusTyrantT1104::EnterDownedPhase()
 {
-    if (Phase == ETyrantPhase::Downed) return;
+    if (Phase != ETyrantPhase::Active) return;
 
     Phase = ETyrantPhase::Downed;
     SetZombieState(EZombieState::Downed);
@@ -62,12 +67,13 @@ void ANexusTyrantT1104::EnterDownedPhase()
         C->StopMovement();
     }
 
-    // Aqui ira la animacion de caida (se ajusta al final)
+    // Animacion de caida (en el montaje desactiva "Enable Auto Blend Out" para que se quede en el suelo)
     if (DeathMontage) PlayAnimMontage(DeathMontage);
 
     UE_LOG(LogTemp, Warning, TEXT("TYRANT: Inconsciente por %.0f segundos. Celdas restantes: %d"),
         DownedDuration, GameDirector ? GameDirector->GetCellsRemaining() : 0);
 
+    GetWorldTimerManager().ClearTimer(RoarTimer);
     GetWorldTimerManager().SetTimer(DownedTimer, this, &ANexusTyrantT1104::ExitDownedPhase, DownedDuration, false);
 }
 
@@ -79,12 +85,29 @@ void ANexusTyrantT1104::ExitDownedPhase()
     const float Factor = FMath::Max(0.1f, 1.0f - HealthLossPerRevive * ReviveCount);
     CurrentHealth = OriginalMaxHealth * Factor;
 
+    // Ruge inmovil e inmune; el estado Downed mantiene quieta a la IA
+    Phase = ETyrantPhase::Roaring;
+    StopAnimMontage();
+
+    float RoarLength = DefaultRoarDuration;
+    if (RoarMontage)
+    {
+        const float PlayedLength = PlayAnimMontage(RoarMontage);
+        if (PlayedLength > 0.f)
+        {
+            RoarLength = PlayedLength;
+        }
+    }
+    PlayZombieSound(RoarSound);
+
+    UE_LOG(LogTemp, Warning, TEXT("TYRANT: Ruge y se levanta con %.0f de vida (%.0f%% de la original)."), CurrentHealth, Factor * 100.f);
+
+    GetWorldTimerManager().SetTimer(RoarTimer, this, &ANexusTyrantT1104::FinishRoar, RoarLength, false);
+}
+
+void ANexusTyrantT1104::FinishRoar()
+{
     Phase = ETyrantPhase::Active;
     SetZombieState(EZombieState::Idle);
-
-    // Aqui ira la animacion de levantarse
-    StopAnimMontage();
     GetCharacterMovement()->SetMovementMode(MOVE_Walking);
-
-    UE_LOG(LogTemp, Warning, TEXT("TYRANT: Se levanta con %.0f de vida (%.0f%% de la original)."), CurrentHealth, Factor * 100.f);
 }

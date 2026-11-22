@@ -38,13 +38,17 @@ struct FNexusDifficultyParams
 };
 
 // FACHADA (Facade): punto unico de acceso a estado, flujo, dificultad y ajustes
-UCLASS()
+UCLASS(BlueprintType)                                        // <<< CAMBIO 1: BlueprintType añadido
 class NEXUS_API UNexusSubsystem : public UGameInstanceSubsystem
 {
     GENERATED_BODY()
 
 public:
     virtual void Initialize(FSubsystemCollectionBase& Collection) override;
+
+    // <<< CAMBIO 2: ahora es UFUNCTION con WorldContext para que salga el nodo en Blueprint
+    UFUNCTION(BlueprintPure, Category = "Nexus|Facade",
+        meta = (WorldContext = "WorldContextObject"))
     static UNexusSubsystem* Get(const UObject* WorldContextObject);
 
     // ---------- Estado del juego (State + Observer) ----------

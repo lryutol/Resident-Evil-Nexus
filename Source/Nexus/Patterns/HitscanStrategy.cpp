@@ -9,21 +9,42 @@ void UHitscanStrategy::ExecuteFire(ANexusWeapon* Weapon, ANexusCharacter* Charac
 {
     if (!Weapon || !Character) return;
 
-    FVector Start = Character->GetFollowCamera()->GetComponentLocation();
-    FVector End = Start + (Character->GetFollowCamera()->GetForwardVector() * Weapon->GetWeaponRange());
+    UCameraComponent* Camera = Character->GetFollowCamera();
+    UWorld* World = Character->GetWorld();
+    if (!Camera || !World)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("HITSCAN: falta la camara o el mundo."));
+        return;
+    }
+
+    const FVector Start = Camera->GetComponentLocation();
+    const FVector Direction = Camera->GetForwardVector();
+    const FVector End = Start + (Direction * Weapon->GetWeaponRange());
 
     FHitResult Hit;
     FCollisionQueryParams Params;
     Params.AddIgnoredActor(Weapon);
     Params.AddIgnoredActor(Character);
 
-    if (Character->GetWorld()->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+    const bool bHit = World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params);
+    const FVector ImpactPoint = bHit ? FVector(Hit.ImpactPoint) : End;
+
+    // Linea amarilla corta: se ve el disparo
+    DrawDebugLine(World, Weapon->GetActorLocation(), ImpactPoint, FColor::Yellow, false, 0.1f, 0, 1.5f);
+
+    if (!bHit)
     {
-        DrawDebugPoint(Character->GetWorld(), Hit.ImpactPoint, 10.f, FColor::Red, false, 2.f);
-        AActor* HitActor = Hit.GetActor();
-        if (HitActor)
-        {
-            UGameplayStatics::ApplyPointDamage(HitActor, Weapon->GetWeaponDamage(), (End - Start).GetSafeNormal(), Hit, Character->GetController(), Weapon, nullptr);
-        }
+        UE_LOG(LogTemp, Warning, TEXT("HITSCAN: el disparo no impacto nada."));
+        return;
+    }
+
+    DrawDebugPoint(World, ImpactPoint, 10.f, FColor::Red, false, 2.f);
+
+    AActor* HitActor = Hit.GetActor();
+    UE_LOG(LogTemp, Warning, TEXT("HITSCAN: impacto en %s (hueso: %s)"), *GetNameSafe(HitActor), *Hit.BoneName.ToString());
+
+    if (HitActor)
+    {
+        UGameplayStatics::ApplyPointDamage(HitActor, Weapon->GetWeaponDamage(), Direction, Hit, Character->GetController(), Weapon, nullptr);
     }
 }

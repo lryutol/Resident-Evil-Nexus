@@ -4,6 +4,7 @@
 #include "../Patterns/HitscanStrategy.h" 
 #include "Camera/CameraComponent.h"
 #include "Components/PrimitiveComponent.h"
+#include "Sound/SoundBase.h"
 #include "Kismet/GameplayStatics.h" 
 
 ANexusWeapon::ANexusWeapon()
@@ -23,6 +24,10 @@ ANexusWeapon::ANexusWeapon()
     WeaponOffsetLocation = FVector(0.f, 0.f, 0.f);
     WeaponOffsetRotation = FRotator(0.f, 0.f, 0.f);
     WeaponOffsetScale = FVector(1.0f, 1.0f, 1.0f);
+
+    FireSound = nullptr;
+    ReloadSound = nullptr;
+    EmptySound = nullptr;
 
     FireStrategy = CreateDefaultSubobject<UHitscanStrategy>(TEXT("HitscanStrategy"));
 }
@@ -57,6 +62,14 @@ bool ANexusWeapon::AddReserveAmmo(int32 Amount)
     return true;
 }
 
+void ANexusWeapon::PlayWeaponSound(USoundBase* SoundToPlay)
+{
+    if (SoundToPlay)
+    {
+        UGameplayStatics::PlaySoundAtLocation(this, SoundToPlay, GetActorLocation());
+    }
+}
+
 void ANexusWeapon::AttachObserver(INexusObserver* Observer)
 {
     if (Observer && !AmmoObservers.Contains(Observer))
@@ -80,10 +93,15 @@ void ANexusWeapon::NotifyAmmoChanged()
 
 void ANexusWeapon::FireWeapon()
 {
-    if (CurrentAmmo <= 0) return;
+    if (CurrentAmmo <= 0)
+    {
+        PlayWeaponSound(EmptySound); // "click" de arma vacia
+        return;
+    }
 
     CurrentAmmo--;
     NotifyAmmoChanged();
+    PlayWeaponSound(FireSound);
 
     if (!OwningCharacter) return;
 
@@ -101,4 +119,5 @@ void ANexusWeapon::Reload()
     CurrentAmmo += Taken;
     ReserveAmmo -= Taken;
     NotifyAmmoChanged();
+    PlayWeaponSound(ReloadSound);
 }

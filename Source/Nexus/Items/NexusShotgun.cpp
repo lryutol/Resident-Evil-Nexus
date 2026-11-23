@@ -29,7 +29,9 @@ ANexusShotgun::ANexusShotgun()
     WeaponOffsetLocation = FVector(-11.f, 2.f, 3.f);
     WeaponOffsetRotation = FRotator(90.f, -90.f, 90.f);
     WeaponOffsetScale = FVector(2.5f, 2.5f, 2.5f);
+}
 
-    // PATRON STRATEGY: sobrescribimos Hitscan con la de escopeta (5 perdigones)
-    FireStrategy = CreateDefaultSubobject<UShotgunStrategy>(TEXT("ShotgunStrategy"));
+UObject* ANexusShotgun::CreateFireStrategy()
+{
+    return NewObject<UShotgunStrategy>(this);
 }

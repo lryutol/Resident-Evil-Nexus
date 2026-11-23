@@ -169,3 +169,13 @@ bool UInventoryComponent::UseHerb()
     HerbCount--;
     return true;
 }
+
+bool UInventoryComponent::UseGrenade()
+{
+    if (GrenadeCount > 0)
+    {
+        GrenadeCount--;
+        return true;
+    }
+    return false;
+}

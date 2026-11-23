@@ -1,17 +1,19 @@
 #include "NexusWeapon.h"
-#include "DrawDebugHelpers.h"
 #include "../Characters/NexusCharacter.h"
-#include "../Patterns/HitscanStrategy.h" 
-#include "Camera/CameraComponent.h"
+#include "../Patterns/HitscanStrategy.h"
 #include "Components/PrimitiveComponent.h"
 #include "Sound/SoundBase.h"
-#include "Kismet/GameplayStatics.h" 
+#include "Kismet/GameplayStatics.h"
 
 ANexusWeapon::ANexusWeapon()
 {
     PrimaryActorTick.bCanEverTick = false;
+
     WeaponMesh = nullptr;
     OwningCharacter = nullptr;
+    FireStrategyObject = nullptr;
+    FireStrategy = nullptr;
+
     WeaponRange = 1500.f;
     WeaponDamage = 20.f;
 
@@ -28,8 +30,31 @@ ANexusWeapon::ANexusWeapon()
     FireSound = nullptr;
     ReloadSound = nullptr;
     EmptySound = nullptr;
+}
 
-    FireStrategy = CreateDefaultSubobject<UHitscanStrategy>(TEXT("HitscanStrategy"));
+void ANexusWeapon::BeginPlay()
+{
+    Super::BeginPlay();
+    EnsureFireStrategy();
+}
+
+// FACTORY METHOD por defecto: disparo instantaneo (Hitscan). Las armas hijas lo sobrescriben.
+UObject* ANexusWeapon::CreateFireStrategy()
+{
+    return NewObject<UHitscanStrategy>(this);
+}
+
+void ANexusWeapon::EnsureFireStrategy()
+{
+    if (FireStrategy) return;
+
+    FireStrategyObject = CreateFireStrategy();
+    FireStrategy = FireStrategyObject ? Cast<INexusFireStrategy>(FireStrategyObject) : nullptr;
+
+    if (!FireStrategy)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("ARMA: %s no pudo crear su estrategia de disparo."), *GetName());
+    }
 }
 
 void ANexusWeapon::AttachToCharacter(ANexusCharacter* Character)
@@ -95,7 +120,16 @@ void ANexusWeapon::FireWeapon()
 {
     if (CurrentAmmo <= 0)
     {
-        PlayWeaponSound(EmptySound); // "click" de arma vacia
+        PlayWeaponSound(EmptySound);
+        return;
+    }
+
+    EnsureFireStrategy();
+
+    // Si no puede disparar NO gasta municion y avisa en el Log
+    if (!OwningCharacter || !FireStrategy)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("ARMA: %s no puede disparar (falta el dueno o la estrategia)."), *GetName());
         return;
     }
 
@@ -103,12 +137,7 @@ void ANexusWeapon::FireWeapon()
     NotifyAmmoChanged();
     PlayWeaponSound(FireSound);
 
-    if (!OwningCharacter) return;
-
-    if (FireStrategy)
-    {
-        FireStrategy->ExecuteFire(this, OwningCharacter);
-    }
+    FireStrategy->ExecuteFire(this, OwningCharacter);
 }
 
 void ANexusWeapon::Reload()

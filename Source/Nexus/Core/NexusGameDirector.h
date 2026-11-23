@@ -18,37 +18,29 @@ public:
     ANexusGameDirector();
     virtual void Tick(float DeltaTime) override;
 
-    // Observer: recibe avisos de la Fachada
-    virtual void OnGameStateChanged(ENexusGameState NewState) override;
-    virtual void OnHealthChanged(float InCurrentHealth, float InMaxHealth) override {}
-    virtual void OnAmmoChanged(int32 InCurrentAmmo, int32 InReserveAmmo) override {}
-    virtual void OnEnemyCountChanged(int32 InCurrentKills, int32 InMaxKills) override {}
-    virtual void OnScoreChanged(int32 InScore, int32 InCombo) override {}
-    virtual void OnTimeBonus(float InSeconds) override {}
-    virtual void OnCellsChanged(int32 InCellsRemaining, int32 InCellsTotal) override {}
+    // OBSERVER
+    virtual void OnGameStateChanged(ENexusGameState) override {}
+    virtual void OnHealthChanged(float, float) override {}
+    virtual void OnAmmoChanged(int32, int32) override {}
+    virtual void OnEnemyCountChanged(int32, int32) override {}
+    virtual void OnScoreChanged(int32, int32) override {}
+    virtual void OnTimeBonus(float) override {}
+    virtual void OnCellsChanged(int32, int32) override {}
 
-    // El enemigo llama a esto al morir
-    UFUNCTION(BlueprintCallable, Category = "Director")
-    void NotifyEnemyKilled(ANexusZombie* DeadEnemy, bool bHeadshot);
+    UFUNCTION(BlueprintCallable, Category = "Director") void NotifyEnemyKilled(ANexusZombie* DeadEnemy, bool bHeadshot);
+    UFUNCTION(BlueprintCallable, Category = "Director") void NotifyBossDefeated();
+    UFUNCTION(BlueprintCallable, Category = "Director") void AddBonusTime(float Seconds);
 
-    // El Tyrant llama a esto al morir: termina el escenario
-    UFUNCTION(BlueprintCallable, Category = "Director")
-    void NotifyBossDefeated();
-
-    // Suma tiempo al reloj (relojes de arena y tiros a la cabeza)
-    UFUNCTION(BlueprintCallable, Category = "Director")
-    void AddBonusTime(float Seconds);
-
-    // Celdas de energia (nivel final)
+    // Celdas de energia
     void RegisterCell();
     void NotifyCellDestroyed();
 
-    // Control de cupos de enemigos (los spawners piden permiso)
+    // Cupos de enemigos (los spawners piden permiso)
     bool TryRegisterSpawn();
     void UnregisterSpawn();
     void RegisterAlive();
 
-    // Registro de enemigos vivos: el Director los guia hacia el jugador
+    // Registro de enemigos vivos (para guiarlos hacia el jugador)
     void RegisterEnemy(ANexusZombie* Enemy);
     void UnregisterEnemy(ANexusZombie* Enemy);
 
@@ -72,67 +64,38 @@ protected:
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
     // ---------- CONFIGURACION POR NIVEL ----------
-    // Todos los spawners del nivel (el Director los coordina)
-    UPROPERTY(EditInstanceOnly, Category = "Director|Level")
-    TArray<ANexusZombieSpawner*> Spawners;
+    UPROPERTY(EditInstanceOnly, Category = "Director|Level") TArray<ANexusZombieSpawner*> Spawners;
+    UPROPERTY(EditAnywhere, Category = "Director|Level") bool bFinalBossLevel;
+    UPROPERTY(EditAnywhere, Category = "Director|Level") int32 BossKillThreshold;
+    UPROPERTY(EditAnywhere, Category = "Director|Level") int32 MiniBossInterval;
 
-    // True solo en Laboratorios: el Tyrant esta desde el inicio y hay celdas
-    UPROPERTY(EditAnywhere, Category = "Director|Level")
-    bool bFinalBossLevel;
+    UPROPERTY(EditAnywhere, Category = "Director|Time") float InitialTime;
+    UPROPERTY(EditAnywhere, Category = "Director|Time") float HeadshotBonusTime;
+    UPROPERTY(EditAnywhere, Category = "Director|Time") float ExtraWaveInterval;
 
-    // Con esta cantidad de muertes aparece el Tyrant (59: el Tyrant es el 60)
-    UPROPERTY(EditAnywhere, Category = "Director|Level")
-    int32 BossKillThreshold;
+    // ---------- OLEADAS (el Director las controla) ----------
+    UPROPERTY(EditAnywhere, Category = "Director|Waves") bool bDirectorControlsWaves;
+    UPROPERTY(EditAnywhere, Category = "Director|Waves") int32 WaveSize;
+    UPROPERTY(EditAnywhere, Category = "Director|Waves") float DelayBetweenWaves;
+    UPROPERTY(EditAnywhere, Category = "Director|Waves") int32 ExtraWaveSize;
 
-    // Cada cuantas muertes aparece un mini boss
-    UPROPERTY(EditAnywhere, Category = "Director|Level")
-    int32 MiniBossInterval;
-
-    // Tiempo inicial del nivel (segundos)
-    UPROPERTY(EditAnywhere, Category = "Director|Time")
-    float InitialTime;
-
-    // Segundos que suma matar de un tiro a la cabeza
-    UPROPERTY(EditAnywhere, Category = "Director|Time")
-    float HeadshotBonusTime;
-
-    // Cada cuantos segundos aparece una oleada extra (nivel final)
-    UPROPERTY(EditAnywhere, Category = "Director|Time")
-    float ExtraWaveInterval;
-
-    // ---------- PUNTAJE (estilo Mercenarios) ----------
+    // ---------- PUNTAJE ----------
     UPROPERTY(EditAnywhere, Category = "Director|Score") int32 CommonPoints;
     UPROPERTY(EditAnywhere, Category = "Director|Score") int32 SpecialPoints;
     UPROPERTY(EditAnywhere, Category = "Director|Score") int32 BossPoints;
     UPROPERTY(EditAnywhere, Category = "Director|Score") int32 HeadshotBonusPoints;
-
-    // Segundos que dura la racha sin matar antes de perderse
     UPROPERTY(EditAnywhere, Category = "Director|Score") float ComboWindow;
 
-    // ---------- CAZA: el Director guia a los enemigos hacia el jugador ----------
-    // Si esta desmarcado, los enemigos solo rondan
-    UPROPERTY(EditAnywhere, Category = "Director|Hunt")
-    bool bHuntEnabled;
-
-    // Cada cuantos segundos se reasignan los puntos de ataque
-    UPROPERTY(EditAnywhere, Category = "Director|Hunt")
-    float HuntUpdateInterval;
-
-    // Distancia al jugador del primer anillo de enemigos
-    UPROPERTY(EditAnywhere, Category = "Director|Hunt")
-    float SurroundRadius;
-
-    // Grados que gira el circulo en cada actualizacion
-    UPROPERTY(EditAnywhere, Category = "Director|Hunt")
-    float SurroundSpinPerUpdate;
+    // ---------- CAZA ----------
+    UPROPERTY(EditAnywhere, Category = "Director|Hunt") bool bHuntEnabled;
+    UPROPERTY(EditAnywhere, Category = "Director|Hunt") float HuntUpdateInterval;
+    UPROPERTY(EditAnywhere, Category = "Director|Hunt") float SurroundRadius;
+    UPROPERTY(EditAnywhere, Category = "Director|Hunt") float SurroundSpinPerUpdate;
 
     // ---------- ESTADO ----------
-    UPROPERTY(VisibleAnywhere, Category = "Director")
-    int32 KillCount;
+    UPROPERTY(VisibleAnywhere, Category = "Director") int32 KillCount;
 
-    // Enemigos vivos registrados (UPROPERTY: se limpia sola si un enemigo se destruye)
-    UPROPERTY()
-    TArray<ANexusZombie*> ActiveEnemies;
+    UPROPERTY() TArray<ANexusZombie*> ActiveEnemies;
 
     int32 Score;
     int32 ComboCount;
@@ -142,9 +105,13 @@ protected:
     int32 CellsTotal;
     int32 CellsRemaining;
     bool bLevelFinished;
+    bool bBossPhaseStarted;
+    int32 BossSpawnAttempts;
+    int32 NextSpawnerIndex;
+    float WaveDelayElapsed;
     float SurroundAngleOffset;
 
-    // Estrategias de Loot (Patron Strategy)
+    // STRATEGY: loot
     INexusLootStrategy* PistolLoot;
     INexusLootStrategy* RifleLoot;
     INexusLootStrategy* ShotgunLoot;
@@ -152,9 +119,7 @@ protected:
     INexusLootStrategy* GrenadeLoot;
     INexusLootStrategy* EmptyLoot;
 
-    // Mantiene vivas las estrategias (evita que el Garbage Collector las destruya)
-    UPROPERTY()
-    TArray<UObject*> LootStrategyRefs;
+    UPROPERTY() TArray<UObject*> LootStrategyRefs;
 
     TArray<INexusObserver*> UIObservers;
 
@@ -162,14 +127,22 @@ protected:
     FTimerHandle FinalBossTimer;
     FTimerHandle ExtraWaveTimer;
     FTimerHandle HuntTimer;
+    FTimerHandle WaveTimer;
+    FTimerHandle BossVerifyTimer;
 
     void NotifyUIKillCount();
     void NotifyUIScore();
     void NotifyUICells();
     int32 CountPendingMiniBosses() const;
+    int32 CountLiveEnemies() const;
+    bool AnySpawnerBusy() const;
+    ANexusZombieSpawner* PickNextSpawner();
+
+    void EvaluateWaves();
+    void UpdateHunt();
     void HandleMiniBossPhase(int32 Bracket);
     void HandleBossPhase();
+    void VerifyBossSpawned();
     void TriggerExtraWaves();
     void FinishScenario();
-    void UpdateHunt();
 };

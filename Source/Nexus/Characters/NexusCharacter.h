@@ -10,6 +10,9 @@ class UCameraComponent;
 class UInventoryComponent;
 class ANexusWeapon;
 class UNexusItemData;
+class UAnimMontage;
+class USoundBase;
+class ANexusGrenade;
 
 UCLASS(config = Game)
 class NEXUS_API ANexusCharacter : public ACharacter
@@ -27,21 +30,24 @@ public:
 
     float GetCurrentHealth() const { return CurrentHealth; }
     float GetMaxHealth() const { return MaxHealth; }
-
-    // Cura al jugador (hierbas)
     void Heal(float Amount);
 
-    // --- PATRON OBSERVER (Manual) ---
+    // Datos para el Animation Blueprint
+    UFUNCTION(BlueprintPure, Category = "Animation") bool GetIsSprinting() const;
+    UFUNCTION(BlueprintPure, Category = "Animation") int32 GetEquippedSlotForAnim() const;
+
+    // OBSERVER
     void AttachObserver(INexusObserver* Observer);
     void DetachObserver(INexusObserver* Observer);
 
 protected:
     virtual void BeginPlay() override;
-    virtual void Tick(float DeltaTime) override;
     virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
-
     virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
+
     void Die();
+    void ReactToHit();
+    void AfterWeaponChange();
     void ShowGameOverScreen();
 
     float MaxHealth;
@@ -52,31 +58,34 @@ protected:
 
     FTimerHandle GameOverTimerHandle;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
-    USpringArmComponent* CameraBoom;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera") USpringArmComponent* CameraBoom;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera") UCameraComponent* FollowCamera;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory") UInventoryComponent* InventoryComponent;
+    UPROPERTY(EditDefaultsOnly, Category = "Combat") TArray<UNexusItemData*> StartingItems;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera")
-    UCameraComponent* FollowCamera;
+    // Clase de la granada
+    UPROPERTY(EditDefaultsOnly, Category = "Combat") TSubclassOf<ANexusGrenade> GrenadeClass;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Inventory")
-    UInventoryComponent* InventoryComponent;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement") float BaseWalkSpeed;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement") float AimWalkSpeed;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement") float SprintSpeed;
 
-    UPROPERTY(EditDefaultsOnly, Category = "Combat")
-    TArray<UNexusItemData*> StartingItems;
+    // Animaciones (montajes)
+    UPROPERTY(EditDefaultsOnly, Category = "Animation") UAnimMontage* HitReactionMontage;
+    UPROPERTY(EditDefaultsOnly, Category = "Animation") UAnimMontage* DeathMontage;
+    UPROPERTY(EditDefaultsOnly, Category = "Animation") UAnimMontage* EquipLongGunMontage;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement")
-    float BaseWalkSpeed;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement")
-    float AimWalkSpeed;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Movement")
-    float SprintSpeed;
+    // Voz de Kyle
+    UPROPERTY(EditDefaultsOnly, Category = "Sound") USoundBase* HurtSound;
+    UPROPERTY(EditDefaultsOnly, Category = "Sound") USoundBase* DeathSound;
 
     bool bSprintHeld;
+    float LastHurtTime;
+    int32 LastEquippedSlot;
+
     void UpdateMoveSpeed();
 
-    // --- INPUTS ---
+    // INPUTS
     void MoveForward(float Value);
     void MoveRight(float Value);
     void Turn(float Value);

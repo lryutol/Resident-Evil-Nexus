@@ -8,17 +8,20 @@
 
 ANexusTyrantT1104::ANexusTyrantT1104()
 {
-    GetCharacterMovement()->MaxWalkSpeed = 100.f;
+    GetCharacterMovement()->MaxWalkSpeed = 300.f;
     MaxHealth = 2000.f;
     CurrentHealth = MaxHealth;
     AttackDamage = 60.f;
-    AttackRange = 200.f;
+    AttackRange = 30.f;
 
-    DownedDuration = 15.f;
+    DownedDuration = 14.f;
     HealthLossPerRevive = 0.05f;
+    DefaultRoarDuration = 2.5f;
+    DownedMontage = nullptr;
+    GetUpMontage = nullptr;
     RoarMontage = nullptr;
     RoarSound = nullptr;
-    DefaultRoarDuration = 2.5f;
+
     Phase = ETyrantPhase::Active;
     OriginalMaxHealth = MaxHealth;
     ReviveCount = 0;
@@ -28,14 +31,20 @@ void ANexusTyrantT1104::BeginPlay()
 {
     Super::BeginPlay();
 
-    // Guardamos la vida original (ya con el multiplicador de dificultad)
+    // Vida original (ya con dificultad y Builder)
     OriginalMaxHealth = MaxHealth;
     Phase = ETyrantPhase::Active;
 }
 
+void ANexusTyrantT1104::ApplyHealthMultiplier(float Multiplier)
+{
+    Super::ApplyHealthMultiplier(Multiplier);
+    OriginalMaxHealth = MaxHealth;
+}
+
 float ANexusTyrantT1104::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
-    // Inconsciente o rugiendo = inmune
+    // Inconsciente, levantandose o rugiendo = inmune
     if (Phase != ETyrantPhase::Active) return 0.f;
 
     return Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
@@ -62,17 +71,19 @@ void ANexusTyrantT1104::EnterDownedPhase()
 
     GetCharacterMovement()->StopMovementImmediately();
     GetCharacterMovement()->DisableMovement();
-    if (AController* C = GetController())
+    if (AController* MyController = GetController())
     {
-        C->StopMovement();
+        MyController->StopMovement();
     }
 
-    // Animacion de caida (en el montaje desactiva "Enable Auto Blend Out" para que se quede en el suelo)
-    if (DeathMontage) PlayAnimMontage(DeathMontage);
+    // En el montaje de caida desactiva "Enable Auto Blend Out" para que se quede en el suelo
+    UAnimMontage* FallMontage = DownedMontage ? DownedMontage : DeathMontage;
+    if (FallMontage) PlayAnimMontage(FallMontage);
 
-    UE_LOG(LogTemp, Warning, TEXT("TYRANT: Inconsciente por %.0f segundos. Celdas restantes: %d"),
+    UE_LOG(LogTemp, Warning, TEXT("TYRANT: inconsciente por %.0f segundos. Celdas restantes: %d"),
         DownedDuration, GameDirector ? GameDirector->GetCellsRemaining() : 0);
 
+    GetWorldTimerManager().ClearTimer(GetUpTimer);
     GetWorldTimerManager().ClearTimer(RoarTimer);
     GetWorldTimerManager().SetTimer(DownedTimer, this, &ANexusTyrantT1104::ExitDownedPhase, DownedDuration, false);
 }
@@ -85,22 +96,31 @@ void ANexusTyrantT1104::ExitDownedPhase()
     const float Factor = FMath::Max(0.1f, 1.0f - HealthLossPerRevive * ReviveCount);
     CurrentHealth = OriginalMaxHealth * Factor;
 
-    // Ruge inmovil e inmune; el estado Downed mantiene quieta a la IA
+    Phase = ETyrantPhase::GettingUp;
+
+    float GetUpLength = 0.05f;
+    if (GetUpMontage)
+    {
+        const float Played = PlayAnimMontage(GetUpMontage);
+        if (Played > 0.f) GetUpLength = Played;
+    }
+
+    UE_LOG(LogTemp, Warning, TEXT("TYRANT: se levanta con %.0f de vida (%.0f%% de la original)."), CurrentHealth, Factor * 100.f);
+
+    GetWorldTimerManager().SetTimer(GetUpTimer, this, &ANexusTyrantT1104::StartRoar, GetUpLength, false);
+}
+
+void ANexusTyrantT1104::StartRoar()
+{
     Phase = ETyrantPhase::Roaring;
-    StopAnimMontage();
 
     float RoarLength = DefaultRoarDuration;
     if (RoarMontage)
     {
-        const float PlayedLength = PlayAnimMontage(RoarMontage);
-        if (PlayedLength > 0.f)
-        {
-            RoarLength = PlayedLength;
-        }
+        const float Played = PlayAnimMontage(RoarMontage);
+        if (Played > 0.f) RoarLength = Played;
     }
     PlayZombieSound(RoarSound);
-
-    UE_LOG(LogTemp, Warning, TEXT("TYRANT: Ruge y se levanta con %.0f de vida (%.0f%% de la original)."), CurrentHealth, Factor * 100.f);
 
     GetWorldTimerManager().SetTimer(RoarTimer, this, &ANexusTyrantT1104::FinishRoar, RoarLength, false);
 }

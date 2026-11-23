@@ -18,7 +18,7 @@ ANexusEnergyCell::ANexusEnergyCell()
     Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
     RootComponent = Mesh;
 
-    static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderAsset(TEXT("StaticMesh'/Game/modelos_varios/Hourglass_LowQ.Hourglass_LowQ'"));
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderAsset(TEXT("StaticMesh'/Game/modelos_varios/barrel_3_4_export_2.barrel_3_4_export_2'"));
     if (CylinderAsset.Succeeded())
     {
         Mesh->SetStaticMesh(CylinderAsset.Object);

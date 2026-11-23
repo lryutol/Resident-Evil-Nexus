@@ -35,6 +35,9 @@ public:
     // Usa una hierba: cura al jugador. False si no hay o ya tiene la vida llena
     bool UseHerb();
 
+    // Usa una granada: resta 1 del inventario. True si había
+    bool UseGrenade();
+
     ANexusWeapon* GetEquippedWeapon() const { return EquippedWeapon; }
     int32 GetEquippedSlot() const;
     int32 GetHerbCount() const { return HerbCount; }

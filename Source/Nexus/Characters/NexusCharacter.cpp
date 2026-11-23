@@ -5,10 +5,15 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Animation/AnimMontage.h"
+#include "Sound/SoundBase.h"
+#include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
+#include "GameFramework/ProjectileMovementComponent.h" // Requerido para la granada
 #include "../Items/InventoryComponent.h"
 #include "../Items/NexusWeapon.h"
 #include "../Items/NexusItemData.h"
+#include "../Items/NexusGrenade.h" // Incluimos la granada
 #include "../Core/NexusPlayerController.h"
 #include "../Core/NexusSubsystem.h"
 #include "../Core/NexusSettingsSave.h"
@@ -39,9 +44,20 @@ ANexusCharacter::ANexusCharacter()
     FollowCamera->bUsePawnControlRotation = false;
 
     InventoryComponent = CreateDefaultSubobject<UInventoryComponent>(TEXT("InventoryComponent"));
+
     bIsAiming = false;
     bSprintHeld = false;
     SprintSpeed = 380.f;
+    BaseWalkSpeed = 150.f;
+    AimWalkSpeed = 100.f;
+
+    HitReactionMontage = nullptr;
+    DeathMontage = nullptr;
+    EquipLongGunMontage = nullptr;
+    HurtSound = nullptr;
+    DeathSound = nullptr;
+    LastHurtTime = -10.f;
+    LastEquippedSlot = 1;
 
     MaxHealth = 100.0f;
     CurrentHealth = MaxHealth;
@@ -61,15 +77,22 @@ void ANexusCharacter::BeginPlay()
         {
             if (Item) InventoryComponent->AddItem(Item);
         }
+        LastEquippedSlot = InventoryComponent->GetEquippedSlot();
     }
 }
 
-void ANexusCharacter::Tick(float DeltaTime)
+// ---------- Datos para el AnimBP ----------
+bool ANexusCharacter::GetIsSprinting() const
 {
-    Super::Tick(DeltaTime);
+    return bSprintHeld && !bIsAiming && GetVelocity().SizeSquared2D() > 400.f;
 }
 
-// --- OBSERVER ---
+int32 ANexusCharacter::GetEquippedSlotForAnim() const
+{
+    return InventoryComponent ? InventoryComponent->GetEquippedSlot() : 1;
+}
+
+// ---------- OBSERVER ----------
 void ANexusCharacter::AttachObserver(INexusObserver* Observer)
 {
     if (Observer && !HealthObservers.Contains(Observer))
@@ -99,6 +122,7 @@ void ANexusCharacter::Heal(float Amount)
     NotifyHealthChanged();
 }
 
+// ---------- Dano y muerte ----------
 float ANexusCharacter::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
     if (CurrentHealth <= 0.0f) return 0.0f;
@@ -108,27 +132,42 @@ float ANexusCharacter::TakeDamage(float DamageAmount, struct FDamageEvent const&
         DamageAmount *= Fachada->GetDifficultyParams().EnemyDamageMultiplier;
     }
 
-    float ActualDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
+    const float ActualDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
 
     if (ActualDamage > 0.0f)
     {
         CurrentHealth -= ActualDamage;
         NotifyHealthChanged();
 
-        UE_LOG(LogTemp, Warning, TEXT("JUGADOR: Recibio %.1f de dano. Vida restante: %.1f"), ActualDamage, CurrentHealth);
+        UE_LOG(LogTemp, Warning, TEXT("JUGADOR: recibio %.1f de dano. Vida restante: %.1f"), ActualDamage, CurrentHealth);
 
         if (CurrentHealth <= 0.0f)
         {
             Die();
+        }
+        else
+        {
+            ReactToHit();
         }
     }
 
     return ActualDamage;
 }
 
+// Voz y animacion de golpe (con enfriamiento para que no se repitan en cada mordida)
+void ANexusCharacter::ReactToHit()
+{
+    const float NowTime = GetWorld()->GetTimeSeconds();
+    if (NowTime - LastHurtTime < 0.6f) return;
+    LastHurtTime = NowTime;
+
+    if (HitReactionMontage) PlayAnimMontage(HitReactionMontage);
+    if (HurtSound) UGameplayStatics::PlaySound2D(this, HurtSound);
+}
+
 void ANexusCharacter::Die()
 {
-    UE_LOG(LogTemp, Warning, TEXT("JUGADOR: Ha muerto."));
+    UE_LOG(LogTemp, Warning, TEXT("JUGADOR: ha muerto."));
 
     if (UNexusSubsystem* Fachada = UNexusSubsystem::Get(this))
     {
@@ -139,6 +178,10 @@ void ANexusCharacter::Die()
     {
         DisableInput(PC);
     }
+
+    GetCharacterMovement()->DisableMovement();
+    if (DeathMontage) PlayAnimMontage(DeathMontage);
+    if (DeathSound) UGameplayStatics::PlaySound2D(this, DeathSound);
 
     GetWorldTimerManager().SetTimer(GameOverTimerHandle, this, &ANexusCharacter::ShowGameOverScreen, 2.0f, false);
 }
@@ -151,6 +194,7 @@ void ANexusCharacter::ShowGameOverScreen()
     }
 }
 
+// ---------- Input ----------
 void ANexusCharacter::SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent)
 {
     check(PlayerInputComponent);
@@ -182,10 +226,8 @@ void ANexusCharacter::MoveForward(float Value)
 {
     if ((Controller != nullptr) && (Value != 0.0f))
     {
-        const FRotator Rotation = Controller->GetControlRotation();
-        const FRotator YawRotation(0, Rotation.Yaw, 0);
-        const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X);
-        AddMovementInput(Direction, Value);
+        const FRotator YawRotation(0, Controller->GetControlRotation().Yaw, 0);
+        AddMovementInput(FRotationMatrix(YawRotation).GetUnitAxis(EAxis::X), Value);
     }
 }
 
@@ -193,10 +235,8 @@ void ANexusCharacter::MoveRight(float Value)
 {
     if ((Controller != nullptr) && (Value != 0.0f))
     {
-        const FRotator Rotation = Controller->GetControlRotation();
-        const FRotator YawRotation(0, Rotation.Yaw, 0);
-        const FVector Direction = FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y);
-        AddMovementInput(Direction, Value);
+        const FRotator YawRotation(0, Controller->GetControlRotation().Yaw, 0);
+        AddMovementInput(FRotationMatrix(YawRotation).GetUnitAxis(EAxis::Y), Value);
     }
 }
 
@@ -220,7 +260,7 @@ void ANexusCharacter::LookUp(float Value)
     AddControllerPitchInput(Value * Sens);
 }
 
-// La velocidad depende del estado: apuntando < caminando < corriendo
+// Apuntando < caminando < corriendo
 void ANexusCharacter::UpdateMoveSpeed()
 {
     float Speed = BaseWalkSpeed;
@@ -272,24 +312,39 @@ void ANexusCharacter::StopAiming()
     }
 }
 
+// Si cambia a un arma larga (slot 2) reproduce la animacion de sacarla
+void ANexusCharacter::AfterWeaponChange()
+{
+    if (!InventoryComponent) return;
+
+    const int32 NewSlot = InventoryComponent->GetEquippedSlot();
+    if (NewSlot == LastEquippedSlot) return;
+    LastEquippedSlot = NewSlot;
+
+    if (NewSlot == 2 && EquipLongGunMontage)
+    {
+        PlayAnimMontage(EquipLongGunMontage);
+    }
+}
+
 void ANexusCharacter::NextWeapon()
 {
-    if (InventoryComponent) InventoryComponent->CycleItem(1);
+    if (InventoryComponent) { InventoryComponent->CycleItem(1); AfterWeaponChange(); }
 }
 
 void ANexusCharacter::PreviousWeapon()
 {
-    if (InventoryComponent) InventoryComponent->CycleItem(-1);
+    if (InventoryComponent) { InventoryComponent->CycleItem(-1); AfterWeaponChange(); }
 }
 
 void ANexusCharacter::SelectSlot1()
 {
-    if (InventoryComponent) InventoryComponent->SelectSlot(1);
+    if (InventoryComponent) { InventoryComponent->SelectSlot(1); AfterWeaponChange(); }
 }
 
 void ANexusCharacter::SelectSlot2()
 {
-    if (InventoryComponent) InventoryComponent->SelectSlot(2);
+    if (InventoryComponent) { InventoryComponent->SelectSlot(2); AfterWeaponChange(); }
 }
 
 void ANexusCharacter::UseHerb()
@@ -299,8 +354,33 @@ void ANexusCharacter::UseHerb()
 
 void ANexusCharacter::UseGrenade()
 {
-    // Pendiente: se implementa en la ultima entrega (lanzamiento de granada)
-    UE_LOG(LogTemp, Warning, TEXT("JUGADOR: Granada aun no implementada."));
+    if (InventoryComponent && InventoryComponent->UseGrenade())
+    {
+        if (!GrenadeClass) return;
+
+        FVector SpawnLocation = FollowCamera->GetComponentLocation() + FollowCamera->GetForwardVector() * 50.f;
+        FRotator SpawnRotation = FollowCamera->GetComponentRotation();
+
+        FActorSpawnParameters SpawnParams;
+        SpawnParams.Owner = this;
+        SpawnParams.Instigator = this;
+
+        ANexusGrenade* Grenade = GetWorld()->SpawnActor<ANexusGrenade>(GrenadeClass, SpawnLocation, SpawnRotation, SpawnParams);
+
+        if (Grenade)
+        {
+            FVector ThrowVelocity = FollowCamera->GetForwardVector() * 1500.f;
+            ThrowVelocity.Z += 400.f;
+
+            Grenade->GetProjectileMovement()->Velocity = ThrowVelocity;
+
+            UE_LOG(LogTemp, Warning, TEXT("JUGADOR: Granada lanzada. Quedan: %d"), InventoryComponent->GetGrenadeCount());
+        }
+    }
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("JUGADOR: No hay granadas en el inventario."));
+    }
 }
 
 void ANexusCharacter::FireWeapon()

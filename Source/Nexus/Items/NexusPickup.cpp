@@ -26,7 +26,7 @@ ANexusPickup::ANexusPickup()
     PistolAmmoScale = FVector(1.5f, 1.5f, 1.5f);
     RifleAmmoScale = FVector(1.8f, 1.8f, 1.8f);
     ShotgunAmmoScale = FVector(1.5f, 1.5f, 1.5f);
-    HerbScale = FVector(5.0f, 5.0f, 5.0f);
+    HerbScale = FVector(2.0f, 2.0f, 2.0f);
     GrenadeScale = FVector(0.07f, 0.07f, 0.07f);
     HourglassScale = FVector(0.2f, 0.2f, 0.2f);
 
@@ -52,7 +52,7 @@ ANexusPickup::ANexusPickup()
     static ConstructorHelpers::FObjectFinder<UStaticMesh> PistolAmmoAsset(TEXT("/Game/modelos_varios/9MM_Ammo.9MM_Ammo"));
     static ConstructorHelpers::FObjectFinder<UStaticMesh> RifleAmmoAsset(TEXT("/Game/modelos_varios/308Win_Ammo.308Win_Ammo"));
     static ConstructorHelpers::FObjectFinder<UStaticMesh> ShotgunAmmoAsset(TEXT("/Game/modelos_varios/12x70_Ammo.12x70_Ammo"));
-    static ConstructorHelpers::FObjectFinder<UStaticMesh> HerbAsset(TEXT("/Game/modelos_varios/HealthPack/HealthPack.HealthPack"));
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> HerbAsset(TEXT("StaticMesh'/Game/modelos_varios/kit/fmedbox.fmedbox'"));
     static ConstructorHelpers::FObjectFinder<UStaticMesh> GrenadeAsset(TEXT("/Game/modelos_varios/Granate/Model.Model"));
     static ConstructorHelpers::FObjectFinder<UStaticMesh> HourglassAsset(TEXT("/Game/modelos_varios/Hourglass_LowQ.Hourglass_LowQ"));
 

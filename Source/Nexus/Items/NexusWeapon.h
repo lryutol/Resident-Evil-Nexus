@@ -29,11 +29,7 @@ public:
     virtual void FireWeapon();
     virtual void Reload();
     void AttachToCharacter(ANexusCharacter* Character);
-
-    // Muestra u oculta el arma (solo la equipada es visible)
     void SetEquipped(bool bEquipped);
-
-    // Devuelve false si la reserva ya estaba llena
     bool AddReserveAmmo(int32 Amount);
 
     float GetWeaponRange() const { return WeaponRange; }
@@ -43,60 +39,45 @@ public:
     int32 GetReserveAmmo() const { return ReserveAmmo; }
     ENexusAmmoType GetAmmoType() const { return AmmoType; }
 
-    // --- PATRON OBSERVER (Manual) ---
+    // OBSERVER (municion)
     void AttachObserver(INexusObserver* Observer);
     void DetachObserver(INexusObserver* Observer);
 
 protected:
+    virtual void BeginPlay() override;
+
+    // FACTORY METHOD: cada arma decide que Estrategia de disparo crear
+    virtual UObject* CreateFireStrategy();
+    void EnsureFireStrategy();
+
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
     UMeshComponent* WeaponMesh;
 
     UPROPERTY()
     ANexusCharacter* OwningCharacter;
 
-    // --- PATRON STRATEGY ---
+    // STRATEGY: el objeto se crea en BeginPlay (no como subobjeto por defecto) y se guarda aqui
     UPROPERTY()
-    TScriptInterface<INexusFireStrategy> FireStrategy;
+    UObject* FireStrategyObject;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
-    float WeaponRange;
+    INexusFireStrategy* FireStrategy;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon")
-    float WeaponDamage;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon") float WeaponRange;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon") float WeaponDamage;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Ammo")
-    ENexusAmmoType AmmoType;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Ammo") ENexusAmmoType AmmoType;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Ammo") int32 MaxAmmo;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon|Ammo") int32 CurrentAmmo;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Ammo") int32 ReserveAmmo;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Ammo") int32 MaxReserveAmmo;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Ammo")
-    int32 MaxAmmo;
+    UPROPERTY(EditDefaultsOnly, Category = "Weapon|Transform") FVector WeaponOffsetLocation;
+    UPROPERTY(EditDefaultsOnly, Category = "Weapon|Transform") FRotator WeaponOffsetRotation;
+    UPROPERTY(EditDefaultsOnly, Category = "Weapon|Transform") FVector WeaponOffsetScale;
 
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Weapon|Ammo")
-    int32 CurrentAmmo;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Ammo")
-    int32 ReserveAmmo;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Weapon|Ammo")
-    int32 MaxReserveAmmo;
-
-    UPROPERTY(EditDefaultsOnly, Category = "Weapon|Transform")
-    FVector WeaponOffsetLocation;
-
-    UPROPERTY(EditDefaultsOnly, Category = "Weapon|Transform")
-    FRotator WeaponOffsetRotation;
-
-    UPROPERTY(EditDefaultsOnly, Category = "Weapon|Transform")
-    FVector WeaponOffsetScale;
-
-    // --- SONIDOS (se asignan en el Blueprint hijo de cada arma) ---
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Sound")
-    USoundBase* FireSound;
-
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Sound")
-    USoundBase* ReloadSound;
-
-    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Sound")
-    USoundBase* EmptySound;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Sound") USoundBase* FireSound;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Sound") USoundBase* ReloadSound;
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Sound") USoundBase* EmptySound;
 
     void PlayWeaponSound(USoundBase* SoundToPlay);
 

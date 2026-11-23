@@ -1,17 +1,21 @@
 #include "NexusCityFactory.h"
 #include "../Characters/NexusZombie.h"
 
-ANexusZombie* UNexusCityFactory::CreateEnemy(UWorld* World, FVector SpawnLocation, FRotator SpawnRotation, EZombieType Type)
+ANexusZombie* UNexusCityFactory::CreateCommonZombie(UWorld* World, const FVector& Location, const FRotator& Rotation)
 {
-    TSubclassOf<ANexusZombie> ClassToSpawn = nullptr;
-    if (Type == EZombieType::Common && ZombieClass) ClassToSpawn = ZombieClass;
-    else if (Type == EZombieType::Special && SpecialClass) ClassToSpawn = SpecialClass;
+    return SpawnProduct(World, ZombieClass, Location, Rotation);
+}
 
-    if (ClassToSpawn)
-    {
-        FActorSpawnParameters Params;
-        Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-        return World->SpawnActor<ANexusZombie>(ClassToSpawn, SpawnLocation, FRotator::ZeroRotator, Params);
-    }
-    return nullptr;
+ANexusZombie* UNexusCityFactory::CreateSpecialZombie(UWorld* World, const FVector& Location, const FRotator& Rotation, int32 Bracket)
+{
+    ANexusZombie* Product = SpawnProduct(World, SpecialClass, Location, Rotation);
+    AssembleVariant(Product, (Bracket % 2 == 1) ? ENexusZombieVariant::Brawler : ENexusZombieVariant::Tank);
+    return Product;
+}
+
+ANexusZombie* UNexusCityFactory::CreateBossZombie(UWorld* World, const FVector& Location, const FRotator& Rotation)
+{
+    ANexusZombie* Boss = SpawnProduct(World, BossClass, Location, Rotation);
+    AssembleBoss(Boss);
+    return Boss;
 }

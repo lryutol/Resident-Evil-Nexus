@@ -20,6 +20,11 @@ ANexusGameDirector::ANexusGameDirector()
     HeadshotBonusTime = 10.f;
     ExtraWaveInterval = 120.f;
 
+    bDirectorControlsWaves = true;
+    WaveSize = 10;
+    DelayBetweenWaves = 3.0f;
+    ExtraWaveSize = 10;
+
     CommonPoints = 100;
     SpecialPoints = 500;
     BossPoints = 2000;
@@ -41,6 +46,10 @@ ANexusGameDirector::ANexusGameDirector()
     CellsTotal = 0;
     CellsRemaining = 0;
     bLevelFinished = false;
+    bBossPhaseStarted = false;
+    BossSpawnAttempts = 0;
+    NextSpawnerIndex = -1;
+    WaveDelayElapsed = 0.f;
 
     PistolLoot = nullptr;
     RifleLoot = nullptr;
@@ -60,10 +69,12 @@ void ANexusGameDirector::BeginPlay()
     AliveEnemies = 0;
     TimeRemaining = InitialTime;
     bLevelFinished = false;
-    // CellsTotal/CellsRemaining NO se reinician: las celdas se registran en su propio BeginPlay
-    // ActiveEnemies NO se reinicia: los enemigos colocados en el mapa se registran en su BeginPlay
+    bBossPhaseStarted = false;
+    BossSpawnAttempts = 0;
+    WaveDelayElapsed = 0.f;
+    // CellsTotal/CellsRemaining y ActiveEnemies NO se reinician: se registran en su propio BeginPlay
 
-    // Estrategias de loot (Patron Strategy), guardadas en un UPROPERTY para el GC
+    // STRATEGY: estrategias de loot, protegidas del Garbage Collector
     UPistolLootStrategy* Pistol = NewObject<UPistolLootStrategy>(this);
     URifleLootStrategy* Rifle = NewObject<URifleLootStrategy>(this);
     UShotgunLootStrategy* Shotgun = NewObject<UShotgunLootStrategy>(this);
@@ -88,21 +99,30 @@ void ANexusGameDirector::BeginPlay()
     if (UNexusSubsystem* Fachada = UNexusSubsystem::Get(this))
     {
         Fachada->AttachObserver(this);
+
+        // El estado de la Fachada sobrevive entre niveles: lo reiniciamos
+        if (Fachada->GetGameState() != ENexusGameState::Exploring)
+        {
+            Fachada->SetGameState(ENexusGameState::Exploring);
+        }
     }
 
     if (Spawners.Num() == 0)
     {
-        UE_LOG(LogTemp, Warning, TEXT("DIRECTOR: No hay Spawners asignados en este nivel."));
+        UE_LOG(LogTemp, Warning, TEXT("DIRECTOR: no hay Spawners asignados en este nivel."));
     }
 
-    // Nivel final: el Tyrant esta desde el inicio y llegan oleadas periodicas
     if (bFinalBossLevel)
     {
+        // Nivel final: el Tyrant esta desde el inicio y llegan oleadas periodicas
         GetWorldTimerManager().SetTimer(FinalBossTimer, this, &ANexusGameDirector::HandleBossPhase, 1.5f, false);
-        GetWorldTimerManager().SetTimer(ExtraWaveTimer, this, &ANexusGameDirector::TriggerExtraWaves, ExtraWaveInterval, true);
+        GetWorldTimerManager().SetTimer(ExtraWaveTimer, this, &ANexusGameDirector::TriggerExtraWaves, FMath::Max(5.f, ExtraWaveInterval), true);
+    }
+    else if (bDirectorControlsWaves)
+    {
+        GetWorldTimerManager().SetTimer(WaveTimer, this, &ANexusGameDirector::EvaluateWaves, 0.5f, true, 1.0f);
     }
 
-    // Caza: el Director guia a los enemigos hacia el jugador
     if (bHuntEnabled)
     {
         GetWorldTimerManager().SetTimer(HuntTimer, this, &ANexusGameDirector::UpdateHunt, FMath::Max(0.2f, HuntUpdateInterval), true, 0.5f);
@@ -114,7 +134,7 @@ void ANexusGameDirector::BeginPlay()
 
 void ANexusGameDirector::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-    GetWorldTimerManager().ClearTimer(HuntTimer);
+    GetWorldTimerManager().ClearAllTimersForObject(this);
 
     if (UNexusSubsystem* Fachada = UNexusSubsystem::Get(this))
     {
@@ -135,10 +155,8 @@ void ANexusGameDirector::Tick(float DeltaTime)
     const ENexusGameState State = Fachada->GetGameState();
     if (State == ENexusGameState::GameOver || State == ENexusGameState::LevelComplete) return;
 
-    // Reloj del nivel
     TimeRemaining -= DeltaTime;
 
-    // Tiempo de racha
     if (ComboCount > 0)
     {
         ComboTimer -= DeltaTime;
@@ -150,19 +168,14 @@ void ANexusGameDirector::Tick(float DeltaTime)
         }
     }
 
-    // Se acabo el tiempo: fin de la partida
     if (TimeRemaining <= 0.f)
     {
         TimeRemaining = 0.f;
         bLevelFinished = true;
-        UE_LOG(LogTemp, Warning, TEXT("DIRECTOR: Se acabo el tiempo."));
+        UE_LOG(LogTemp, Warning, TEXT("DIRECTOR: se acabo el tiempo."));
         Fachada->SetGameState(ENexusGameState::GameOver);
         Fachada->ShowGameOver();
     }
-}
-
-void ANexusGameDirector::OnGameStateChanged(ENexusGameState NewState)
-{
 }
 
 void ANexusGameDirector::AttachUI(INexusObserver* UI)
@@ -222,24 +235,28 @@ void ANexusGameDirector::AddBonusTime(float Seconds)
     }
 }
 
-// ---------- Caza de enemigos ----------
-
+// ---------- Registro de enemigos ----------
 void ANexusGameDirector::RegisterEnemy(ANexusZombie* Enemy)
 {
-    if (Enemy)
-    {
-        ActiveEnemies.AddUnique(Enemy);
-    }
+    if (Enemy) ActiveEnemies.AddUnique(Enemy);
 }
 
 void ANexusGameDirector::UnregisterEnemy(ANexusZombie* Enemy)
 {
-    if (Enemy)
-    {
-        ActiveEnemies.Remove(Enemy);
-    }
+    if (Enemy) ActiveEnemies.Remove(Enemy);
 }
 
+int32 ANexusGameDirector::CountLiveEnemies() const
+{
+    int32 Live = 0;
+    for (ANexusZombie* Candidate : ActiveEnemies)
+    {
+        if (IsValid(Candidate) && Candidate->GetZombieState() != EZombieState::Dead) Live++;
+    }
+    return Live;
+}
+
+// ---------- Caza: el Director guia a los enemigos hacia el jugador ----------
 void ANexusGameDirector::UpdateHunt()
 {
     if (bLevelFinished) return;
@@ -247,7 +264,6 @@ void ANexusGameDirector::UpdateHunt()
     APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
     if (!PlayerPawn) return;
 
-    // Limpiamos enemigos destruidos o muertos
     for (int32 i = ActiveEnemies.Num() - 1; i >= 0; --i)
     {
         ANexusZombie* Candidate = ActiveEnemies[i];
@@ -260,7 +276,6 @@ void ANexusGameDirector::UpdateHunt()
     const int32 EnemyCount = ActiveEnemies.Num();
     if (EnemyCount == 0) return;
 
-    // El circulo gira un poco en cada actualizacion
     SurroundAngleOffset = FMath::Fmod(SurroundAngleOffset + SurroundSpinPerUpdate, 360.f);
 
     const FVector PlayerLocation = PlayerPawn->GetActorLocation();
@@ -268,9 +283,8 @@ void ANexusGameDirector::UpdateHunt()
 
     for (int32 Index = 0; Index < EnemyCount; ++Index)
     {
-        // Reparto en circulo alrededor del jugador, en 3 anillos de radio
-        const float AngleDegrees = SurroundAngleOffset + (360.f / EnemyCount) * Index;
-        const float AngleRadians = FMath::DegreesToRadians(AngleDegrees);
+        // Reparto en circulo alrededor del jugador, en 3 anillos
+        const float AngleRadians = FMath::DegreesToRadians(SurroundAngleOffset + (360.f / EnemyCount) * Index);
         const float RingRadius = SurroundRadius + 100.f * (Index % 3);
 
         FVector TargetPoint = PlayerLocation + FVector(FMath::Cos(AngleRadians), FMath::Sin(AngleRadians), 0.f) * RingRadius;
@@ -284,7 +298,6 @@ void ANexusGameDirector::UpdateHunt()
             }
             else
             {
-                // Sin NavMesh en ese punto: va directo hacia el jugador
                 TargetPoint = PlayerLocation;
             }
         }
@@ -293,16 +306,83 @@ void ANexusGameDirector::UpdateHunt()
     }
 }
 
-// ---------- Cupos de enemigos ----------
+// ---------- Oleadas: solo sale la siguiente cuando TODO esta muerto ----------
+bool ANexusGameDirector::AnySpawnerBusy() const
+{
+    for (ANexusZombieSpawner* S : Spawners)
+    {
+        if (S && S->IsSpawning()) return true;
+    }
+    return false;
+}
 
+ANexusZombieSpawner* ANexusGameDirector::PickNextSpawner()
+{
+    const int32 Count = Spawners.Num();
+    for (int32 Step = 0; Step < Count; ++Step)
+    {
+        NextSpawnerIndex = (NextSpawnerIndex + 1) % Count;
+        if (Spawners[NextSpawnerIndex]) return Spawners[NextSpawnerIndex];
+    }
+    return nullptr;
+}
+
+void ANexusGameDirector::EvaluateWaves()
+{
+    if (bLevelFinished || bFinalBossLevel || bBossPhaseStarted) return;
+
+    if (AnySpawnerBusy())
+    {
+        WaveDelayElapsed = 0.f;
+        return;
+    }
+
+    // Autocorreccion: si el contador dice que hay enemigos pero no queda ninguno vivo
+    if (AliveEnemies > 0 && CountLiveEnemies() == 0)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("DIRECTOR: contador de enemigos desincronizado, se reinicia."));
+        AliveEnemies = 0;
+    }
+
+    if (AliveEnemies > 0)
+    {
+        WaveDelayElapsed = 0.f;
+        return;
+    }
+
+    // Cuota agotada: solo falta el jefe
+    if (BossKillThreshold - KillCount - CountPendingMiniBosses() <= 0) return;
+
+    WaveDelayElapsed += 0.5f;
+    if (WaveDelayElapsed < DelayBetweenWaves) return;
+    WaveDelayElapsed = 0.f;
+
+    if (ANexusZombieSpawner* Chosen = PickNextSpawner())
+    {
+        UE_LOG(LogTemp, Warning, TEXT("DIRECTOR: nueva oleada de %d en %s."), WaveSize, *Chosen->GetName());
+        Chosen->StartWave(WaveSize);
+    }
+}
+
+void ANexusGameDirector::TriggerExtraWaves()
+{
+    if (bLevelFinished) return;
+
+    if (ANexusZombieSpawner* Chosen = PickNextSpawner())
+    {
+        Chosen->StartWave(ExtraWaveSize);
+    }
+}
+
+// ---------- Cupos de enemigos ----------
 int32 ANexusGameDirector::CountPendingMiniBosses() const
 {
     int32 Pending = 0;
     if (MiniBossInterval > 0)
     {
-        for (int32 M = MiniBossInterval; M < BossKillThreshold; M += MiniBossInterval)
+        for (int32 Milestone = MiniBossInterval; Milestone < BossKillThreshold; Milestone += MiniBossInterval)
         {
-            if (M > KillCount) Pending++;
+            if (Milestone > KillCount) Pending++;
         }
     }
     return Pending;
@@ -312,7 +392,6 @@ bool ANexusGameDirector::TryRegisterSpawn()
 {
     if (!bFinalBossLevel)
     {
-        // Total de enemigos antes del jefe = BossKillThreshold, reservando los mini bosses
         const int32 Allowed = BossKillThreshold - KillCount - AliveEnemies - CountPendingMiniBosses();
         if (Allowed <= 0) return false;
     }
@@ -332,7 +411,6 @@ void ANexusGameDirector::RegisterAlive()
 }
 
 // ---------- Celdas ----------
-
 void ANexusGameDirector::RegisterCell()
 {
     CellsTotal++;
@@ -344,11 +422,10 @@ void ANexusGameDirector::NotifyCellDestroyed()
 {
     CellsRemaining = FMath::Max(0, CellsRemaining - 1);
     NotifyUICells();
-    UE_LOG(LogTemp, Warning, TEXT("DIRECTOR: Celda destruida. Quedan %d."), CellsRemaining);
+    UE_LOG(LogTemp, Warning, TEXT("DIRECTOR: celda destruida. Quedan %d."), CellsRemaining);
 }
 
 // ---------- Muertes, puntaje y jefes ----------
-
 void ANexusGameDirector::NotifyEnemyKilled(ANexusZombie* DeadEnemy, bool bHeadshot)
 {
     if (!DeadEnemy) return;
@@ -357,14 +434,12 @@ void ANexusGameDirector::NotifyEnemyKilled(ANexusZombie* DeadEnemy, bool bHeadsh
     const bool bIsSpecial = Cast<ANexusZombieSpecial>(DeadEnemy) != nullptr;
 
     UnregisterEnemy(DeadEnemy);
-
-    // El Tyrant no se registra en la cuota
     if (!bIsBoss) UnregisterSpawn();
 
     KillCount++;
-    UE_LOG(LogTemp, Warning, TEXT("DIRECTOR: Enemigo eliminado. Total: %d"), KillCount);
+    UE_LOG(LogTemp, Warning, TEXT("DIRECTOR: enemigo eliminado. Total: %d"), KillCount);
 
-    // 1. Racha y puntaje
+    // Racha y puntaje
     ComboCount++;
     ComboTimer = ComboWindow;
 
@@ -379,7 +454,7 @@ void ANexusGameDirector::NotifyEnemyKilled(ANexusZombie* DeadEnemy, bool bHeadsh
     NotifyUIKillCount();
     NotifyUIScore();
 
-    // 2. Patron Strategy: loot por probabilidad
+    // STRATEGY: loot por probabilidad
     const int32 Roll = FMath::RandRange(1, 100);
     const FVector DropLocation = DeadEnemy->GetActorLocation();
     UWorld* World = GetWorld();
@@ -391,14 +466,14 @@ void ANexusGameDirector::NotifyEnemyKilled(ANexusZombie* DeadEnemy, bool bHeadsh
     else if (Roll <= 77) { GrenadeLoot->GenerateLoot(World, DropLocation); }
     else { EmptyLoot->GenerateLoot(World, DropLocation); }
 
-    // 3. Jefes (solo en niveles normales)
+    // Jefes (solo en niveles normales)
     if (!bFinalBossLevel)
     {
         if (KillCount < BossKillThreshold && MiniBossInterval > 0 && (KillCount % MiniBossInterval) == 0)
         {
             HandleMiniBossPhase(KillCount / MiniBossInterval);
         }
-        else if (KillCount == BossKillThreshold)
+        else if (KillCount >= BossKillThreshold && !bBossPhaseStarted)
         {
             HandleBossPhase();
         }
@@ -407,39 +482,68 @@ void ANexusGameDirector::NotifyEnemyKilled(ANexusZombie* DeadEnemy, bool bHeadsh
 
 void ANexusGameDirector::HandleMiniBossPhase(int32 Bracket)
 {
-    UE_LOG(LogTemp, Warning, TEXT("DIRECTOR: Invocando Mini-Boss %d!"), Bracket);
+    UE_LOG(LogTemp, Warning, TEXT("DIRECTOR: invocando Mini-Boss %d."), Bracket);
 
-    TArray<ANexusZombieSpawner*> Valid;
-    for (ANexusZombieSpawner* S : Spawners)
+    if (ANexusZombieSpawner* Chosen = PickNextSpawner())
     {
-        if (S) Valid.Add(S);
-    }
-
-    if (Valid.Num() > 0)
-    {
-        Valid[FMath::RandRange(0, Valid.Num() - 1)]->SpawnMiniBoss(Bracket);
+        Chosen->SpawnMiniBoss(Bracket);
     }
 }
 
 void ANexusGameDirector::HandleBossPhase()
 {
-    UE_LOG(LogTemp, Warning, TEXT("DIRECTOR: INVOCANDO AL TYRANT T-1104 (Builder)!"));
+    if (bBossPhaseStarted) return;
+    bBossPhaseStarted = true;
 
-    // Observer: el spawner marcado como "Boss Spawner" lo crea al recibir el estado
+    UE_LOG(LogTemp, Warning, TEXT("DIRECTOR: INVOCANDO AL TYRANT T-1104."));
+
+    // OBSERVER: el spawner marcado como jefe lo crea al recibir el estado
     if (UNexusSubsystem* Fachada = UNexusSubsystem::Get(this))
     {
         Fachada->SetGameState(ENexusGameState::BossFight);
     }
+
+    // Verificacion: si el Tyrant no aparece, el Director lo fuerza
+    BossSpawnAttempts = 0;
+    GetWorldTimerManager().SetTimer(BossVerifyTimer, this, &ANexusGameDirector::VerifyBossSpawned, 1.5f, false);
 }
 
-void ANexusGameDirector::TriggerExtraWaves()
+void ANexusGameDirector::VerifyBossSpawned()
 {
     if (bLevelFinished) return;
 
+    if (UGameplayStatics::GetActorOfClass(this, ANexusTyrantT1104::StaticClass())) return;
+
+    BossSpawnAttempts++;
+    if (BossSpawnAttempts > 3)
+    {
+        UE_LOG(LogTemp, Error, TEXT("DIRECTOR: el Tyrant no se pudo crear tras 3 intentos. Revisa spawners, NavMesh y BP_Tyrant."));
+        return;
+    }
+
+    ANexusZombieSpawner* Chosen = nullptr;
     for (ANexusZombieSpawner* S : Spawners)
     {
-        if (S) S->TriggerWave();
+        if (S && S->IsBossSpawner()) { Chosen = S; break; }
     }
+    if (!Chosen)
+    {
+        for (ANexusZombieSpawner* S : Spawners)
+        {
+            if (S) { Chosen = S; break; }
+        }
+    }
+
+    if (!Chosen)
+    {
+        UE_LOG(LogTemp, Error, TEXT("DIRECTOR: no hay ningun spawner para crear al Tyrant."));
+        return;
+    }
+
+    UE_LOG(LogTemp, Warning, TEXT("DIRECTOR: el Tyrant no aparecio, forzando con %s (intento %d)."), *Chosen->GetName(), BossSpawnAttempts);
+    Chosen->SpawnBoss();
+
+    GetWorldTimerManager().SetTimer(BossVerifyTimer, this, &ANexusGameDirector::VerifyBossSpawned, 2.0f, false);
 }
 
 void ANexusGameDirector::NotifyBossDefeated()

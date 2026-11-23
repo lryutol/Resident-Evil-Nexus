@@ -5,9 +5,9 @@
 #include "NexusZombie.generated.h"
 
 class ANexusGameDirector;
-class ANexusZombieSpawner;
+class UPointLightComponent;
 
-// PATRON STATE: estados del zombie. Downed se agrego al final para no mover los valores existentes
+// PATRON STATE: estados visibles del zombie (los usan la IA, las animaciones y el Director)
 UENUM(BlueprintType)
 enum class EZombieState : uint8
 {
@@ -33,14 +33,21 @@ public:
 
     EZombieState GetZombieState() const { return CurrentState; }
     void SetZombieState(EZombieState NewState) { CurrentState = NewState; }
+    float GetAttackRange() const { return AttackRange; }
 
-    // El spawner que creo a este zombie (para avisarle cuando muere)
-    void SetOriginSpawner(ANexusZombieSpawner* Spawner) { OriginSpawner = Spawner; }
-
-    // El Director le indica a donde ir para rodear al jugador
+    // El Director indica el punto donde debe ir para rodear al jugador
     void SetHuntTarget(const FVector& NewTarget) { HuntTargetLocation = NewTarget; bHasHuntTarget = true; }
     bool HasHuntTarget() const { return bHasHuntTarget; }
     FVector GetHuntTarget() const { return HuntTargetLocation; }
+
+    // API que usa el patron Builder
+    virtual void ApplyHealthMultiplier(float Multiplier);
+    void ApplyMoveSpeedMultiplier(float Multiplier);
+    void ApplyAttackMultipliers(float DamageMultiplier, float RangeMultiplier);
+    void ApplyArmor(float DamageReduction);
+    void ApplyShield(float ShieldPoints);
+    void ApplyBodyScale(float NewScale);
+    void ApplyGlow(const FLinearColor& GlowColor);
 
 protected:
     virtual void BeginPlay() override;
@@ -64,56 +71,41 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Damage Zones")
     float HeadMultiplier;
 
-    UPROPERTY(EditDefaultsOnly, Category = "Animation")
-    class UAnimMontage* AttackMontage;
+    UPROPERTY(EditDefaultsOnly, Category = "Animation") class UAnimMontage* AttackMontage;
+    UPROPERTY(EditDefaultsOnly, Category = "Animation") class UAnimMontage* AltAttackMontage;
+    UPROPERTY(EditDefaultsOnly, Category = "Animation") class UAnimMontage* ReachMontage;
+    UPROPERTY(EditDefaultsOnly, Category = "Animation") class UAnimMontage* DeathMontage;
+    UPROPERTY(EditDefaultsOnly, Category = "Animation") class UAnimMontage* HitMontage;
 
-    UPROPERTY(EditDefaultsOnly, Category = "Animation")
-    class UAnimMontage* ReachMontage;
-
-    UPROPERTY(EditDefaultsOnly, Category = "Animation")
-    class UAnimMontage* DeathMontage;
-
-    UPROPERTY(EditDefaultsOnly, Category = "Animation")
-    class UAnimMontage* HitMontage;
-
-    // --- SONIDOS (se asignan en el Blueprint del enemigo) ---
-    UPROPERTY(EditDefaultsOnly, Category = "Sound")
-    class USoundBase* AttackSound;
-
-    UPROPERTY(EditDefaultsOnly, Category = "Sound")
-    class USoundBase* HitSound;
-
-    UPROPERTY(EditDefaultsOnly, Category = "Sound")
-    class USoundBase* DeathSound;
+    UPROPERTY(EditDefaultsOnly, Category = "Sound") class USoundBase* AttackSound;
+    UPROPERTY(EditDefaultsOnly, Category = "Sound") class USoundBase* HitSound;
+    UPROPERTY(EditDefaultsOnly, Category = "Sound") class USoundBase* DeathSound;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI")
     EZombieState CurrentState;
 
+    // Alcance del golpe medido desde la superficie de la capsula
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
     float AttackRange;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
     float AttackDamage;
 
+    // Luz de color que distingue a las variantes del Builder
+    UPROPERTY(VisibleAnywhere, Category = "Variant")
+    UPointLightComponent* VariantGlow;
+
     UPROPERTY()
     ANexusGameDirector* GameDirector;
 
-    UPROPERTY()
-    ANexusZombieSpawner* OriginSpawner;
-
-    // True si el ultimo impacto recibido fue en la cabeza
+    float ArmorReduction;
+    float ShieldHealth;
     bool bLastHitWasHeadshot;
-
-    // Evita que 5 perdigones de escopeta suenen 5 veces a la vez
     float LastHitSoundTime;
-
-    // Punto que el Director asigno para rodear al jugador
     FVector HuntTargetLocation;
     bool bHasHuntTarget;
 
-    // Fuerza que la capsula y la malla bloqueen los disparos (canal Visibility)
     void ConfigureHitCollision();
-
     void PlayZombieSound(class USoundBase* SoundToPlay);
 
     // Virtual: el Tyrant lo sobrescribe para su logica de inmortalidad

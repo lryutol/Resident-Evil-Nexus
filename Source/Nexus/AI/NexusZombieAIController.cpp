@@ -1,5 +1,7 @@
 #include "NexusZombieAIController.h"
+#include "NexusZombieState.h"
 #include "../Characters/NexusZombie.h"
+#include "Components/CapsuleComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "NavigationSystem.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -10,24 +12,28 @@ ANexusZombieAIController::ANexusZombieAIController()
 
     ZombiePawn = nullptr;
     PlayerTarget = nullptr;
+    ActiveState = nullptr;
+    WanderState = nullptr;
+    HuntState = nullptr;
+    ChaseState = nullptr;
+    ReachState = nullptr;
+    AttackState = nullptr;
+    DownedState = nullptr;
 
     AttackCooldown = 2.0f;
-    TimeSinceLastAttack = 0.f;
-
+    TimeSinceLastAttack = 2.0f;
     DetectionRadius = 800.f;
-    ReachingRadius = 160.f;
-    AttackRadius = 100.f;
 
     ChaseSpeed = 50.f;
-    ReachSpeed = 20.f;
     bSpeedsReady = false;
 
     RepathTimer = 0.f;
     RepathInterval = 0.25f;
+    bRepathNow = false;
 
-    CurrentWanderTarget = FVector::ZeroVector;
     WanderTimer = 0.f;
     WanderInterval = 4.0f;
+    WanderTarget = FVector::ZeroVector;
 }
 
 void ANexusZombieAIController::BeginPlay()
@@ -35,6 +41,47 @@ void ANexusZombieAIController::BeginPlay()
     Super::BeginPlay();
     ZombiePawn = Cast<ANexusZombie>(GetPawn());
     PlayerTarget = UGameplayStatics::GetPlayerCharacter(GetWorld(), 0);
+    CreateStates();
+}
+
+void ANexusZombieAIController::CreateStates()
+{
+    if (WanderState) return;
+
+    WanderState = NewObject<UNexusWanderState>(this);
+    HuntState = NewObject<UNexusHuntState>(this);
+    ChaseState = NewObject<UNexusChaseState>(this);
+    ReachState = NewObject<UNexusReachState>(this);
+    AttackState = NewObject<UNexusAttackState>(this);
+    DownedState = NewObject<UNexusDownedState>(this);
+}
+
+void ANexusZombieAIController::ChangeState(UNexusZombieState* NewState)
+{
+    if (!NewState || NewState == ActiveState) return;
+
+    if (ActiveState) ActiveState->OnExit(this);
+    ActiveState = NewState;
+    ActiveState->OnEnter(this);
+}
+
+float ANexusZombieAIController::GetSurfaceDistance() const
+{
+    if (!ZombiePawn || !PlayerTarget) return 100000.f;
+
+    const float RadiiSum = ZombiePawn->GetCapsuleComponent()->GetScaledCapsuleRadius()
+        + PlayerTarget->GetCapsuleComponent()->GetScaledCapsuleRadius();
+    return FVector::Dist2D(ZombiePawn->GetActorLocation(), PlayerTarget->GetActorLocation()) - RadiiSum;
+}
+
+float ANexusZombieAIController::GetAttackThreshold() const
+{
+    return ZombiePawn ? ZombiePawn->GetAttackRange() * 0.8f : 80.f;
+}
+
+float ANexusZombieAIController::GetReachThreshold() const
+{
+    return GetAttackThreshold() + 80.f;
 }
 
 void ANexusZombieAIController::Tick(float DeltaTime)
@@ -43,95 +90,47 @@ void ANexusZombieAIController::Tick(float DeltaTime)
 
     if (!ZombiePawn) ZombiePawn = Cast<ANexusZombie>(GetPawn());
     if (!PlayerTarget) PlayerTarget = UGameplayStatics::GetPlayerCharacter(GetWorld(), 0);
-
     if (!ZombiePawn || !PlayerTarget || ZombiePawn->IsHidden()) return;
-    if (ZombiePawn->GetZombieState() == EZombieState::Dead) return;
 
-    // Inconsciente (Tyrant): no se mueve ni ataca
-    if (ZombiePawn->GetZombieState() == EZombieState::Downed)
-    {
-        StopMovement();
-        return;
-    }
+    CreateStates();
 
-    // Cada enemigo conserva la velocidad que tiene en su Blueprint
+    const EZombieState PawnState = ZombiePawn->GetZombieState();
+    if (PawnState == EZombieState::Dead) return;
+
+    // Cada enemigo conserva la velocidad de su Blueprint (el Builder ya la modifico)
     if (!bSpeedsReady)
     {
         ChaseSpeed = FMath::Max(10.f, ZombiePawn->GetCharacterMovement()->MaxWalkSpeed);
-        ReachSpeed = ChaseSpeed * 0.4f;
         bSpeedsReady = true;
+    }
+
+    // Inconsciente (lo decide el propio enemigo, por ejemplo el Tyrant)
+    if (PawnState == EZombieState::Downed)
+    {
+        ChangeState(DownedState);
+        return;
+    }
+    if (ActiveState == DownedState || !ActiveState)
+    {
+        ChangeState(WanderState);
     }
 
     TimeSinceLastAttack += DeltaTime;
 
     RepathTimer += DeltaTime;
-    const bool bRepath = (RepathTimer >= RepathInterval);
-    if (bRepath) RepathTimer = 0.f;
+    bRepathNow = (RepathTimer >= RepathInterval);
+    if (bRepathNow) RepathTimer = 0.f;
 
-    const float Distance = FVector::Dist(ZombiePawn->GetActorLocation(), PlayerTarget->GetActorLocation());
+    ActiveState->OnTick(this, DeltaTime);
+}
 
-    if (Distance <= AttackRadius)
+void ANexusZombieAIController::TickWander(float DeltaTime)
+{
+    WanderTimer += DeltaTime;
+    if (WanderTimer >= WanderInterval || WanderTarget.IsZero())
     {
-        // 1. ATACAR
-        if (ZombiePawn->GetZombieState() != EZombieState::Attacking)
-        {
-            ZombiePawn->SetZombieState(EZombieState::Attacking);
-            ZombiePawn->GetCharacterMovement()->MaxWalkSpeed = 0.f;
-            StopMovement();
-        }
-
-        if (TimeSinceLastAttack >= AttackCooldown)
-        {
-            ZombiePawn->PerformAttack();
-            TimeSinceLastAttack = 0.f;
-        }
-    }
-    else if (Distance <= ReachingRadius)
-    {
-        // 2. ESTIRAR BRAZOS
-        if (ZombiePawn->GetZombieState() != EZombieState::Reaching)
-        {
-            ZombiePawn->SetZombieState(EZombieState::Reaching);
-            ZombiePawn->PlayReachMontage();
-            ZombiePawn->GetCharacterMovement()->MaxWalkSpeed = ReachSpeed;
-        }
-        if (bRepath) MoveToActor(PlayerTarget, 10.f);
-    }
-    else if (Distance <= DetectionRadius)
-    {
-        // 3. PERSEGUIR directo al jugador
-        if (ZombiePawn->GetZombieState() != EZombieState::Chase)
-        {
-            ZombiePawn->SetZombieState(EZombieState::Chase);
-            ZombiePawn->GetCharacterMovement()->MaxWalkSpeed = ChaseSpeed;
-        }
-        if (bRepath) MoveToActor(PlayerTarget, 10.f);
-    }
-    else if (ZombiePawn->HasHuntTarget())
-    {
-        // 4. CAZAR: el Director indica un punto alrededor del jugador (para rodearlo)
-        if (ZombiePawn->GetZombieState() != EZombieState::Chase)
-        {
-            ZombiePawn->SetZombieState(EZombieState::Chase);
-            ZombiePawn->GetCharacterMovement()->MaxWalkSpeed = ChaseSpeed;
-        }
-        if (bRepath) MoveToLocation(ZombiePawn->GetHuntTarget(), 120.f);
-    }
-    else
-    {
-        // 5. RONDAR (si no hay Director en el nivel)
-        if (ZombiePawn->GetZombieState() != EZombieState::Idle)
-        {
-            ZombiePawn->SetZombieState(EZombieState::Idle);
-            ZombiePawn->GetCharacterMovement()->MaxWalkSpeed = ChaseSpeed;
-        }
-
-        WanderTimer += DeltaTime;
-        if (WanderTimer >= WanderInterval || CurrentWanderTarget.IsZero())
-        {
-            MoveToRandomPoint();
-            WanderTimer = 0.f;
-        }
+        MoveToRandomPoint();
+        WanderTimer = 0.f;
     }
 }
 
@@ -145,8 +144,8 @@ void ANexusZombieAIController::MoveToRandomPoint()
         FNavLocation RandomLocation;
         if (NavSys->GetRandomReachablePointInRadius(ZombiePawn->GetActorLocation(), 1000.f, RandomLocation))
         {
-            CurrentWanderTarget = RandomLocation.Location;
-            MoveToLocation(CurrentWanderTarget, 100.f);
+            WanderTarget = RandomLocation.Location;
+            MoveToLocation(WanderTarget, 100.f);
         }
     }
 }

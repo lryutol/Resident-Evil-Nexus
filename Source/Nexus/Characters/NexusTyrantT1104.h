@@ -7,13 +7,14 @@
 class UAnimMontage;
 class USoundBase;
 
-// PATRON STATE del jefe: Active (pelea), Downed (inconsciente e inmune), Roaring (ruge al levantarse, inmune)
+// PATRON STATE del jefe: Active (pelea), Downed (inconsciente), Roaring (ruge) y GettingUp (se levanta)
 UENUM(BlueprintType)
 enum class ETyrantPhase : uint8
 {
     Active,
     Downed,
-    Roaring
+    Roaring,
+    GettingUp
 };
 
 UCLASS()
@@ -25,6 +26,7 @@ public:
     ANexusTyrantT1104();
 
     virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser) override;
+    virtual void ApplyHealthMultiplier(float Multiplier) override;
 
     ETyrantPhase GetPhase() const { return Phase; }
 
@@ -34,26 +36,18 @@ protected:
 
     void EnterDownedPhase();
     void ExitDownedPhase();
+    void StartRoar();
     void FinishRoar();
 
-    // Segundos que pasa inconsciente
-    UPROPERTY(EditAnywhere, Category = "Tyrant")
-    float DownedDuration;
+    UPROPERTY(EditAnywhere, Category = "Tyrant") float DownedDuration;
+    UPROPERTY(EditAnywhere, Category = "Tyrant") float HealthLossPerRevive;
+    UPROPERTY(EditDefaultsOnly, Category = "Tyrant") float DefaultRoarDuration;
 
-    // Vida que pierde en cada levantada (0.05 = 5% de la original)
-    UPROPERTY(EditAnywhere, Category = "Tyrant")
-    float HealthLossPerRevive;
-
-    // Animacion y sonido de rugido al levantarse (se asignan en BP_Tyrant)
-    UPROPERTY(EditDefaultsOnly, Category = "Tyrant")
-    UAnimMontage* RoarMontage;
-
-    UPROPERTY(EditDefaultsOnly, Category = "Tyrant")
-    USoundBase* RoarSound;
-
-    // Duracion del rugido si no hay montaje asignado
-    UPROPERTY(EditDefaultsOnly, Category = "Tyrant")
-    float DefaultRoarDuration;
+    // Animaciones de la secuencia: cae -> se levanta -> ruge
+    UPROPERTY(EditDefaultsOnly, Category = "Tyrant") UAnimMontage* DownedMontage;
+    UPROPERTY(EditDefaultsOnly, Category = "Tyrant") UAnimMontage* GetUpMontage;
+    UPROPERTY(EditDefaultsOnly, Category = "Tyrant") UAnimMontage* RoarMontage;
+    UPROPERTY(EditDefaultsOnly, Category = "Tyrant") USoundBase* RoarSound;
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Tyrant")
     ETyrantPhase Phase;
@@ -61,5 +55,6 @@ protected:
     float OriginalMaxHealth;
     int32 ReviveCount;
     FTimerHandle DownedTimer;
+    FTimerHandle GetUpTimer;
     FTimerHandle RoarTimer;
 };

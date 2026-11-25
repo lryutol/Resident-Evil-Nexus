@@ -13,6 +13,7 @@
 ANexusZombie::ANexusZombie()
 {
     PrimaryActorTick.bCanEverTick = false;
+    AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
     GetCapsuleComponent()->InitCapsuleSize(42.f, 96.0f);
     GetCharacterMovement()->MaxWalkSpeed = 150.f;
 
@@ -61,7 +62,6 @@ void ANexusZombie::BeginPlay()
 
     ConfigureHitCollision();
 
-    // La dificultad (Fachada) escala la vida del enemigo
     if (UNexusSubsystem* Fachada = UNexusSubsystem::Get(this))
     {
         MaxHealth *= Fachada->GetDifficultyParams().EnemyHealthMultiplier;
@@ -75,8 +75,6 @@ void ANexusZombie::BeginPlay()
     }
 }
 
-// Los disparos usan el canal Visibility: capsula y malla deben bloquearlo.
-// Pawn en Block: los zombies no se atraviesan entre si ni atraviesan al jugador.
 void ANexusZombie::ConfigureHitCollision()
 {
     UCapsuleComponent* Capsule = GetCapsuleComponent();
@@ -101,7 +99,6 @@ void ANexusZombie::PlayZombieSound(USoundBase* SoundToPlay)
     }
 }
 
-// ---------- API del Builder ----------
 void ANexusZombie::ApplyHealthMultiplier(float Multiplier)
 {
     MaxHealth *= Multiplier;
@@ -136,7 +133,6 @@ void ANexusZombie::ApplyBodyScale(float NewScale)
 
     SetActorScale3D(FVector(NewScale));
 
-    // Si crece, lo subimos para que los pies no queden dentro del suelo
     const float NewHalfHeight = Capsule->GetScaledCapsuleHalfHeight();
     AddActorWorldOffset(FVector(0.f, 0.f, FMath::Max(0.f, NewHalfHeight - OldHalfHeight)));
 }
@@ -151,7 +147,6 @@ void ANexusZombie::ApplyGlow(const FLinearColor& GlowColor)
     VariantGlow->SetVisibility(true);
 }
 
-// ---------- Dano ----------
 float ANexusZombie::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
     if (bIsDead) return 0.f;
@@ -164,7 +159,6 @@ float ANexusZombie::TakeDamage(float DamageAmount, struct FDamageEvent const& Da
         const FPointDamageEvent* PointEvent = static_cast<const FPointDamageEvent*>(&DamageEvent);
         HitBone = PointEvent->HitInfo.BoneName;
 
-        // Si el disparo golpeo la capsula (sin hueso), buscamos el hueso mas cercano al impacto
         if (HitBone == NAME_None && GetMesh())
         {
             const FVector ImpactLocation = PointEvent->HitInfo.ImpactPoint;
@@ -184,7 +178,6 @@ float ANexusZombie::TakeDamage(float DamageAmount, struct FDamageEvent const& Da
 
     float FinalDamage = DamageAmount * Multiplier;
 
-    // Escudo: absorbe los impactos frontales (el tiro a la cabeza lo esquiva)
     if (ShieldHealth > 0.f && bFrontalHit && !bHeadHit)
     {
         const float Absorbed = FMath::Min(ShieldHealth, FinalDamage);
@@ -217,7 +210,6 @@ float ANexusZombie::TakeDamage(float DamageAmount, struct FDamageEvent const& Da
     return ActualDamage;
 }
 
-// ---------- Ataque: el alcance se mide desde la superficie de las capsulas ----------
 void ANexusZombie::PerformAttack()
 {
     if (bIsDead) return;
@@ -256,7 +248,7 @@ void ANexusZombie::Die()
     if (bIsDead) return;
 
     bIsDead = true;
-    bHasHuntTarget = false;
+    ClearHuntTarget();
     SetZombieState(EZombieState::Dead);
     GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
@@ -268,7 +260,6 @@ void ANexusZombie::Die()
 
     if (DeathMontage)
     {
-        // Con animacion de muerte: se reproduce completa (sin ragdoll)
         GetCharacterMovement()->DisableMovement();
         GetMesh()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
         const float MontageLength = PlayAnimMontage(DeathMontage);
@@ -283,7 +274,6 @@ void ANexusZombie::Die()
 
     UE_LOG(LogTemp, Warning, TEXT("NEXUS ZOMBIE: %s ha muerto."), *GetName());
 
-    // Notificamos al Director (Patron Observer)
     if (GameDirector)
     {
         GameDirector->NotifyEnemyKilled(this, bLastHitWasHeadshot);

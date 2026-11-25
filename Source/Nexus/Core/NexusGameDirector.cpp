@@ -21,7 +21,7 @@ ANexusGameDirector::ANexusGameDirector()
     ExtraWaveInterval = 120.f;
 
     bDirectorControlsWaves = true;
-    WaveSize = 10;
+    WaveSize = 20;
     DelayBetweenWaves = 3.0f;
     ExtraWaveSize = 10;
 
@@ -283,26 +283,44 @@ void ANexusGameDirector::UpdateHunt()
 
     for (int32 Index = 0; Index < EnemyCount; ++Index)
     {
+        ANexusZombie* Enemy = ActiveEnemies[Index];
+        if (!IsValid(Enemy)) continue;
+
+        // Si es el Tyrant y no esta activo (inconsciente, levantandose o rugiendo), limpiamos su punto de caza
+        if (ANexusTyrantT1104* Tyrant = Cast<ANexusTyrantT1104>(Enemy))
+        {
+            if (!Tyrant->CanActAndMove())
+            {
+                Enemy->ClearHuntTarget();
+                continue;
+            }
+        }
+
         // Reparto en circulo alrededor del jugador, en 3 anillos
         const float AngleRadians = FMath::DegreesToRadians(SurroundAngleOffset + (360.f / EnemyCount) * Index);
         const float RingRadius = SurroundRadius + 100.f * (Index % 3);
 
-        FVector TargetPoint = PlayerLocation + FVector(FMath::Cos(AngleRadians), FMath::Sin(AngleRadians), 0.f) * RingRadius;
+        FVector DesiredPoint = PlayerLocation + FVector(FMath::Cos(AngleRadians), FMath::Sin(AngleRadians), 0.f) * RingRadius;
+        FVector FinalTarget = PlayerLocation;
 
         if (NavSys)
         {
             FNavLocation NavPoint;
-            if (NavSys->ProjectPointToNavigation(TargetPoint, NavPoint, FVector(300.f, 300.f, 500.f)))
+            if (NavSys->ProjectPointToNavigation(DesiredPoint, NavPoint, FVector(250.f, 250.f, 400.f)))
             {
-                TargetPoint = NavPoint.Location;
+                FinalTarget = NavPoint.Location;
             }
             else
             {
-                TargetPoint = PlayerLocation;
+                FNavLocation FallbackPoint;
+                if (NavSys->GetRandomPointInNavigableRadius(PlayerLocation, RingRadius, FallbackPoint))
+                {
+                    FinalTarget = FallbackPoint.Location;
+                }
             }
         }
 
-        ActiveEnemies[Index]->SetHuntTarget(TargetPoint);
+        Enemy->SetHuntTarget(FinalTarget);
     }
 }
 

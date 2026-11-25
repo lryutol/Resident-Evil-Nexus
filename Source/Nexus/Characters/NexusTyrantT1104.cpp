@@ -8,7 +8,16 @@
 
 ANexusTyrantT1104::ANexusTyrantT1104()
 {
-    GetCharacterMovement()->MaxWalkSpeed = 300.f;
+    if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+    {
+        MoveComp->MaxWalkSpeed = 300.f;
+        MoveComp->bOrientRotationToMovement = true;
+        MoveComp->RotationRate = FRotator(0.f, 240.f, 0.f);
+        MoveComp->bUseRVOAvoidance = true;
+    }
+
+    bUseControllerRotationYaw = false;
+
     MaxHealth = 2000.f;
     CurrentHealth = MaxHealth;
     AttackDamage = 60.f;
@@ -34,12 +43,22 @@ void ANexusTyrantT1104::BeginPlay()
     // Vida original (ya con dificultad y Builder)
     OriginalMaxHealth = MaxHealth;
     Phase = ETyrantPhase::Active;
+
+    if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+    {
+        MoveComp->SetMovementMode(MOVE_Walking);
+    }
 }
 
 void ANexusTyrantT1104::ApplyHealthMultiplier(float Multiplier)
 {
     Super::ApplyHealthMultiplier(Multiplier);
     OriginalMaxHealth = MaxHealth;
+}
+
+bool ANexusTyrantT1104::CanActAndMove() const
+{
+    return CurrentHealth > 0.f && Phase == ETyrantPhase::Active;
 }
 
 float ANexusTyrantT1104::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
@@ -59,7 +78,22 @@ void ANexusTyrantT1104::Die()
         return;
     }
 
+    HaltAIAndMovement();
     Super::Die();
+}
+
+void ANexusTyrantT1104::HaltAIAndMovement()
+{
+    if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+    {
+        MoveComp->StopMovementImmediately();
+        MoveComp->DisableMovement();
+    }
+
+    if (AController* MyController = GetController())
+    {
+        MyController->StopMovement();
+    }
 }
 
 void ANexusTyrantT1104::EnterDownedPhase()
@@ -68,13 +102,7 @@ void ANexusTyrantT1104::EnterDownedPhase()
 
     Phase = ETyrantPhase::Downed;
     SetZombieState(EZombieState::Downed);
-
-    GetCharacterMovement()->StopMovementImmediately();
-    GetCharacterMovement()->DisableMovement();
-    if (AController* MyController = GetController())
-    {
-        MyController->StopMovement();
-    }
+    HaltAIAndMovement();
 
     // En el montaje de caida desactiva "Enable Auto Blend Out" para que se quede en el suelo
     UAnimMontage* FallMontage = DownedMontage ? DownedMontage : DeathMontage;
@@ -97,6 +125,7 @@ void ANexusTyrantT1104::ExitDownedPhase()
     CurrentHealth = OriginalMaxHealth * Factor;
 
     Phase = ETyrantPhase::GettingUp;
+    HaltAIAndMovement();
 
     float GetUpLength = 0.05f;
     if (GetUpMontage)
@@ -113,6 +142,7 @@ void ANexusTyrantT1104::ExitDownedPhase()
 void ANexusTyrantT1104::StartRoar()
 {
     Phase = ETyrantPhase::Roaring;
+    HaltAIAndMovement();
 
     float RoarLength = DefaultRoarDuration;
     if (RoarMontage)
@@ -129,5 +159,9 @@ void ANexusTyrantT1104::FinishRoar()
 {
     Phase = ETyrantPhase::Active;
     SetZombieState(EZombieState::Idle);
-    GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+
+    if (UCharacterMovementComponent* MoveComp = GetCharacterMovement())
+    {
+        MoveComp->SetMovementMode(MOVE_Walking);
+    }
 }

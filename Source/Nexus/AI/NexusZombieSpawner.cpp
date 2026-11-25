@@ -1,4 +1,4 @@
-#include "NexusZombieSpawner.h" // SIEMPRE EL PRIMERO
+#include "NexusZombieSpawner.h"
 #include "NexusEnemyFactory.h"
 #include "NexusCityFactory.h"
 #include "../Characters/NexusZombie.h"
@@ -63,7 +63,6 @@ void ANexusZombieSpawner::OnGameStateChanged(ENexusGameState NewState)
     }
 }
 
-// Busca un punto SOBRE el NavMesh, cerca de una zona y libre de otros enemigos
 bool ANexusZombieSpawner::FindSpawnLocation(FVector& OutLocation) const
 {
     UNavigationSystemV1* NavSys = UNavigationSystemV1::GetCurrent(GetWorld());
@@ -74,7 +73,6 @@ bool ANexusZombieSpawner::FindSpawnLocation(FVector& OutLocation) const
         ANexusSpawnZone* Zone = SpawnZones[FMath::RandRange(0, SpawnZones.Num() - 1)];
         if (!Zone) continue;
 
-        // Extension vertical corta: evita proyectar a un piso de otro nivel
         FNavLocation NavPoint;
         if (!NavSys->ProjectPointToNavigation(Zone->GetRandomPointInZone(), NavPoint, FVector(80.f, 80.f, 150.f))) continue;
 
@@ -112,7 +110,6 @@ void ANexusZombieSpawner::SpawnNext()
     }
     PendingToSpawn--;
 
-    // El Director controla la cuota total del nivel
     if (Director && !Director->TryRegisterSpawn())
     {
         PendingToSpawn = 0;

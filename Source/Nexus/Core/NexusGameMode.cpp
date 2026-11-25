@@ -7,6 +7,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "UObject/ConstructorHelpers.h"
 #include "TimerManager.h"
+#include "Engine/Engine.h"
 
 ANexusGameMode::ANexusGameMode()
 {
@@ -32,9 +33,16 @@ void ANexusGameMode::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// Ocultar avisos de pantalla del motor (iluminacion, streaming pool, etc.)
+	if (GEngine)
+	{
+		GEngine->Exec(GetWorld(), TEXT("DisableAllScreenMessages"));
+	}
+
 	UNexusSubsystem* Fachada = UNexusSubsystem::Get(this);
 	if (Fachada)
 	{
+		Fachada->HideLoadingScreen();
 		Fachada->SetGameState(ENexusGameState::Exploring);
 	}
 

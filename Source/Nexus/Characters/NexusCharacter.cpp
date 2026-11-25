@@ -9,6 +9,7 @@
 #include "Sound/SoundBase.h"
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
+#include "UObject/ConstructorHelpers.h"
 #include "GameFramework/ProjectileMovementComponent.h" // Requerido para la granada
 #include "../Items/InventoryComponent.h"
 #include "../Items/NexusWeapon.h"
@@ -49,13 +50,21 @@ ANexusCharacter::ANexusCharacter()
     bSprintHeld = false;
     SprintSpeed = 380.f;
     BaseWalkSpeed = 150.f;
-    AimWalkSpeed = 100.f;
+    AimWalkSpeed = 150.f;
 
     HitReactionMontage = nullptr;
     DeathMontage = nullptr;
     EquipLongGunMontage = nullptr;
     HurtSound = nullptr;
     DeathSound = nullptr;
+    HealSound = nullptr;
+
+    static ConstructorHelpers::FObjectFinder<USoundBase> HealSoundObj(TEXT("/Game/Audio/SFX/Weapons/curacion"));
+    if (HealSoundObj.Succeeded())
+    {
+        HealSound = HealSoundObj.Object;
+    }
+
     LastHurtTime = -10.f;
     LastEquippedSlot = 1;
 
@@ -120,6 +129,11 @@ void ANexusCharacter::Heal(float Amount)
 
     CurrentHealth = FMath::Min(MaxHealth, CurrentHealth + Amount);
     NotifyHealthChanged();
+
+    if (HealSound)
+    {
+        UGameplayStatics::PlaySound2D(this, HealSound);
+    }
 }
 
 // ---------- Dano y muerte ----------

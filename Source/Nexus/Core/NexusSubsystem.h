@@ -7,6 +7,8 @@
 #include "NexusSubsystem.generated.h"
 
 class UNexusSettingsSave;
+class UUserWidget;
+class UPackage;
 
 UENUM(BlueprintType)
 enum class ENexusDifficulty : uint8
@@ -38,7 +40,7 @@ struct FNexusDifficultyParams
 };
 
 // FACHADA (Facade): punto unico de acceso a estado, flujo, dificultad y ajustes
-UCLASS(BlueprintType)                                        // <<< CAMBIO 1: BlueprintType añadido
+UCLASS(BlueprintType)
 class NEXUS_API UNexusSubsystem : public UGameInstanceSubsystem
 {
     GENERATED_BODY()
@@ -46,7 +48,6 @@ class NEXUS_API UNexusSubsystem : public UGameInstanceSubsystem
 public:
     virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 
-    // <<< CAMBIO 2: ahora es UFUNCTION con WorldContext para que salga el nodo en Blueprint
     UFUNCTION(BlueprintPure, Category = "Nexus|Facade",
         meta = (WorldContext = "WorldContextObject"))
     static UNexusSubsystem* Get(const UObject* WorldContextObject);
@@ -71,6 +72,16 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Nexus|Flow") void ReturnToMainMenu();
     UFUNCTION(BlueprintCallable, Category = "Nexus|Flow") void QuitToDesktop();
     UFUNCTION(BlueprintCallable, Category = "Nexus|Flow") void ShowGameOver();
+
+    // ---------- Pantalla de carga ----------
+    UFUNCTION(BlueprintPure, Category = "Nexus|Loading")
+    float GetLoadingProgress() const { return LoadingProgress; }
+
+    UFUNCTION(BlueprintPure, Category = "Nexus|Loading")
+    int32 GetTargetScenarioIndex() const { return TargetScenarioIndex; }
+
+    UFUNCTION(BlueprintCallable, Category = "Nexus|Loading")
+    void HideLoadingScreen();
 
     // ---------- Dificultad ----------
     UFUNCTION(BlueprintPure, Category = "Nexus|Difficulty") ENexusDifficulty GetDifficulty() const { return Difficulty; }
@@ -98,7 +109,12 @@ public:
 private:
     void LoadSettings();
     void OpenScenario(int32 Index);
-    void OpenMapByName(FName MapName);
+    void OpenMapByName(FName MapName, int32 ScenarioIdxForLoading = -1);
+    void ShowLoadingAndTravel(FName MapName, int32 ScenarioIdxForLoading);
+    void PollAsyncLoadProgress();
+    void OnMapPackageLoaded(const FName& PackageName, UPackage* LoadedPackage, EAsyncLoadingResult::Type Result);
+    void ExecuteOpenLevelNow(FName MapToOpen);
+    void StopLoadingTimer();
     void StoreBinding(FName Name, bool bIsAxis, float Scale, const FKey& Key);
     void NotifyStateChanged();
 
@@ -106,11 +122,18 @@ private:
     TArray<INexusObserver*> Observers;
 
     UPROPERTY() UNexusSettingsSave* Settings = nullptr;
+    UPROPERTY() UUserWidget* ActiveLoadingWidget = nullptr;
 
     ENexusDifficulty Difficulty = ENexusDifficulty::Medium;
     bool bPendingCampaign = true;
     bool bCampaignMode = false;
     bool bGameOverShown = false;
+    bool bIsLoadingMap = false;
+    bool bPackageReadyToOpen = false;
     int32 PendingScenarioIndex = 0;
     int32 CurrentScenarioIndex = 0;
+    int32 TargetScenarioIndex = -1;
+    float LoadingProgress = 0.0f;
+    FName PendingMapName = NAME_None;
+    FTimerHandle LoadingTickTimerHandle;
 };

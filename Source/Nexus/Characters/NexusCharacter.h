@@ -75,9 +75,10 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category = "Animation") UAnimMontage* DeathMontage;
     UPROPERTY(EditDefaultsOnly, Category = "Animation") UAnimMontage* EquipLongGunMontage;
 
-    // Voz de Kyle
+    // Sonidos de Kyle
     UPROPERTY(EditDefaultsOnly, Category = "Sound") USoundBase* HurtSound;
     UPROPERTY(EditDefaultsOnly, Category = "Sound") USoundBase* DeathSound;
+    UPROPERTY(EditDefaultsOnly, Category = "Sound") USoundBase* HealSound;
 
     bool bSprintHeld;
     float LastHurtTime;

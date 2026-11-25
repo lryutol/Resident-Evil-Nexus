@@ -1,134 +1,178 @@
 #include "NexusZombieState.h"
 #include "NexusZombieAIController.h"
 #include "../Characters/NexusZombie.h"
+#include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 
-// ---------- Rondar ----------
+namespace
+{
+    ANexusZombie* SafeZombie(ANexusZombieAIController* Brain)
+    {
+        return IsValid(Brain) ? Brain->GetZombie() : nullptr;
+    }
+
+    UCharacterMovementComponent* SafeMove(ANexusZombieAIController* Brain)
+    {
+        ANexusZombie* Z = SafeZombie(Brain);
+        return IsValid(Z) ? Z->GetCharacterMovement() : nullptr;
+    }
+}
+
 void UNexusWanderState::OnEnter(ANexusZombieAIController* Brain)
 {
-    Brain->GetZombie()->SetZombieState(EZombieState::Idle);
-    Brain->GetZombie()->GetCharacterMovement()->MaxWalkSpeed = Brain->GetChaseSpeed();
+    ANexusZombie* Z = SafeZombie(Brain);
+    UCharacterMovementComponent* M = SafeMove(Brain);
+    if (Z) Z->SetZombieState(EZombieState::Idle);
+    if (M) M->MaxWalkSpeed = Brain->GetChaseSpeed();
 }
 
 void UNexusWanderState::OnTick(ANexusZombieAIController* Brain, float DeltaTime)
 {
+    ANexusZombie* Z = SafeZombie(Brain);
+    if (!Z || !IsValid(Brain->GetChaseState())) return;
+
     if (Brain->GetSurfaceDistance() <= Brain->GetDetectionRadius())
     {
-        Brain->ChangeState(Brain->GetChaseState());
+        Brain->ChangeAIState(Brain->GetChaseState());
         return;
     }
-    if (Brain->GetZombie()->HasHuntTarget())
+    if (Z->HasHuntTarget() && IsValid(Brain->GetHuntState()))
     {
-        Brain->ChangeState(Brain->GetHuntState());
+        Brain->ChangeAIState(Brain->GetHuntState());
         return;
     }
     Brain->TickWander(DeltaTime);
 }
 
-// ---------- Cazar (el Director indica un punto alrededor del jugador) ----------
 void UNexusHuntState::OnEnter(ANexusZombieAIController* Brain)
 {
-    Brain->GetZombie()->SetZombieState(EZombieState::Chase);
-    Brain->GetZombie()->GetCharacterMovement()->MaxWalkSpeed = Brain->GetChaseSpeed();
+    ANexusZombie* Z = SafeZombie(Brain);
+    UCharacterMovementComponent* M = SafeMove(Brain);
+    if (Z) Z->SetZombieState(EZombieState::Chase);
+    if (M) M->MaxWalkSpeed = Brain->GetChaseSpeed();
 }
 
 void UNexusHuntState::OnTick(ANexusZombieAIController* Brain, float DeltaTime)
 {
-    if (Brain->GetSurfaceDistance() <= Brain->GetDetectionRadius())
+    ANexusZombie* Z = SafeZombie(Brain);
+    if (!Z) return;
+
+    if (Brain->GetSurfaceDistance() <= Brain->GetDetectionRadius() && IsValid(Brain->GetChaseState()))
     {
-        Brain->ChangeState(Brain->GetChaseState());
+        Brain->ChangeAIState(Brain->GetChaseState());
         return;
     }
-    if (!Brain->GetZombie()->HasHuntTarget())
+    if (!Z->HasHuntTarget() && IsValid(Brain->GetWanderState()))
     {
-        Brain->ChangeState(Brain->GetWanderState());
+        Brain->ChangeAIState(Brain->GetWanderState());
         return;
     }
-    if (Brain->ShouldRepath())
-    {
-        Brain->MoveToLocation(Brain->GetZombie()->GetHuntTarget(), 120.f);
-    }
+    Brain->MoveToPointSmart(Z->GetHuntTarget(), DeltaTime, 120.f);
 }
 
-// ---------- Perseguir al jugador ----------
 void UNexusChaseState::OnEnter(ANexusZombieAIController* Brain)
 {
-    Brain->GetZombie()->SetZombieState(EZombieState::Chase);
-    Brain->GetZombie()->GetCharacterMovement()->MaxWalkSpeed = Brain->GetChaseSpeed();
+    ANexusZombie* Z = SafeZombie(Brain);
+    UCharacterMovementComponent* M = SafeMove(Brain);
+    if (Z) Z->SetZombieState(EZombieState::Chase);
+    if (M) M->MaxWalkSpeed = Brain->GetChaseSpeed();
 }
 
 void UNexusChaseState::OnTick(ANexusZombieAIController* Brain, float DeltaTime)
 {
+    if (!SafeZombie(Brain)) return;
+
     const float Distance = Brain->GetSurfaceDistance();
 
-    if (Distance <= Brain->GetReachThreshold())
+    if (Distance <= Brain->GetReachThreshold() && IsValid(Brain->GetReachState()))
     {
-        Brain->ChangeState(Brain->GetReachState());
+        Brain->ChangeAIState(Brain->GetReachState());
         return;
     }
-    if (Distance > Brain->GetDetectionRadius() * 1.2f)
+    if (Distance > Brain->GetDetectionRadius() * 1.25f)
     {
-        Brain->ChangeState(Brain->GetZombie()->HasHuntTarget() ? Brain->GetHuntState() : Brain->GetWanderState());
+        ANexusZombie* Z = SafeZombie(Brain);
+        UNexusZombieState* NextState = (Z && Z->HasHuntTarget()) ? Brain->GetHuntState() : Brain->GetWanderState();
+        if (IsValid(NextState))
+        {
+            Brain->ChangeAIState(NextState);
+        }
         return;
     }
-    if (Brain->ShouldRepath())
-    {
-        Brain->MoveToActor(Brain->GetPlayer(), 10.f);
-    }
+    Brain->ChasePlayerSmart(DeltaTime, 15.f);
 }
 
-// ---------- Estirar los brazos ----------
 void UNexusReachState::OnEnter(ANexusZombieAIController* Brain)
 {
-    Brain->GetZombie()->SetZombieState(EZombieState::Reaching);
-    Brain->GetZombie()->PlayReachMontage();
-    Brain->GetZombie()->GetCharacterMovement()->MaxWalkSpeed = Brain->GetReachSpeed();
+    ANexusZombie* Z = SafeZombie(Brain);
+    UCharacterMovementComponent* M = SafeMove(Brain);
+    if (Z)
+    {
+        Z->SetZombieState(EZombieState::Reaching);
+        Z->PlayReachMontage();
+    }
+    if (M) M->MaxWalkSpeed = Brain->GetReachSpeed();
 }
 
 void UNexusReachState::OnTick(ANexusZombieAIController* Brain, float DeltaTime)
 {
+    if (!SafeZombie(Brain)) return;
+
     const float Distance = Brain->GetSurfaceDistance();
 
-    if (Distance <= Brain->GetAttackThreshold())
+    if (Distance <= Brain->GetAttackThreshold() && IsValid(Brain->GetAttackState()))
     {
-        Brain->ChangeState(Brain->GetAttackState());
+        Brain->ChangeAIState(Brain->GetAttackState());
         return;
     }
-    if (Distance > Brain->GetReachThreshold() * 1.3f)
+    if (Distance > Brain->GetReachThreshold() * 1.35f && IsValid(Brain->GetChaseState()))
     {
-        Brain->ChangeState(Brain->GetChaseState());
+        Brain->ChangeAIState(Brain->GetChaseState());
         return;
     }
-    if (Brain->ShouldRepath())
-    {
-        Brain->MoveToActor(Brain->GetPlayer(), 10.f);
-    }
+    Brain->ChasePlayerSmart(DeltaTime, 10.f);
 }
 
-// ---------- Atacar ----------
 void UNexusAttackState::OnEnter(ANexusZombieAIController* Brain)
 {
-    Brain->GetZombie()->SetZombieState(EZombieState::Attacking);
-    Brain->GetZombie()->GetCharacterMovement()->MaxWalkSpeed = 0.f;
-    Brain->StopMovement();
+    ANexusZombie* Z = SafeZombie(Brain);
+    UCharacterMovementComponent* M = SafeMove(Brain);
+    if (Z) Z->SetZombieState(EZombieState::Attacking);
+    if (M) M->MaxWalkSpeed = 0.f;
+    if (IsValid(Brain)) Brain->StopMovement();
 }
 
 void UNexusAttackState::OnTick(ANexusZombieAIController* Brain, float DeltaTime)
 {
-    if (Brain->GetSurfaceDistance() > Brain->GetAttackThreshold() * 1.3f)
+    ANexusZombie* Z = SafeZombie(Brain);
+    if (!Z) return;
+
+    if (Brain->GetSurfaceDistance() > Brain->GetAttackThreshold() * 1.35f && IsValid(Brain->GetReachState()))
     {
-        Brain->ChangeState(Brain->GetReachState());
+        Brain->ChangeAIState(Brain->GetReachState());
         return;
     }
+
+    if (IsValid(Brain->GetPlayer()))
+    {
+        const FVector Dir = (Brain->GetPlayer()->GetActorLocation() - Z->GetActorLocation()).GetSafeNormal2D();
+        if (!Dir.IsNearlyZero())
+        {
+            Z->SetActorRotation(FMath::RInterpTo(Z->GetActorRotation(), FRotator(0.f, Dir.Rotation().Yaw, 0.f), DeltaTime, 10.f));
+        }
+    }
+
     if (Brain->CanAttackNow())
     {
-        Brain->GetZombie()->PerformAttack();
+        Z->PerformAttack();
         Brain->ResetAttackTimer();
     }
 }
 
-// ---------- Inconsciente ----------
 void UNexusDownedState::OnEnter(ANexusZombieAIController* Brain)
 {
-    Brain->StopMovement();
+    if (IsValid(Brain))
+    {
+        Brain->StopMovement();
+    }
 }

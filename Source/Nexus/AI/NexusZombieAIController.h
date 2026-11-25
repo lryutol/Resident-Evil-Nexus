@@ -7,7 +7,6 @@
 class ANexusZombie;
 class UNexusZombieState;
 
-// Contexto del patron State: guarda el estado activo y las medidas que usan los estados
 UCLASS()
 class NEXUS_API ANexusZombieAIController : public AAIController
 {
@@ -17,12 +16,11 @@ public:
     ANexusZombieAIController();
     virtual void Tick(float DeltaTime) override;
 
-    void ChangeState(UNexusZombieState* NewState);
+    void ChangeAIState(UNexusZombieState* NewState);
 
-    ANexusZombie* GetZombie() const { return ZombiePawn; }
-    ACharacter* GetPlayer() const { return PlayerTarget; }
+    ANexusZombie* GetZombie() const;
+    ACharacter* GetPlayer() const;
 
-    // Distancia horizontal entre las SUPERFICIES de las capsulas (no entre centros)
     float GetSurfaceDistance() const;
     float GetAttackThreshold() const;
     float GetReachThreshold() const;
@@ -35,6 +33,9 @@ public:
     void ResetAttackTimer() { TimeSinceLastAttack = 0.f; }
     void TickWander(float DeltaTime);
 
+    void ChasePlayerSmart(float DeltaTime, float AcceptanceRadius = 20.f);
+    void MoveToPointSmart(const FVector& TargetPoint, float DeltaTime, float AcceptanceRadius = 100.f);
+
     UNexusZombieState* GetWanderState() const { return WanderState; }
     UNexusZombieState* GetHuntState() const { return HuntState; }
     UNexusZombieState* GetChaseState() const { return ChaseState; }
@@ -43,9 +44,15 @@ public:
 
 protected:
     virtual void BeginPlay() override;
+    virtual void OnPossess(APawn* InPawn) override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
+    void RefreshReferences();
     void CreateStates();
     void MoveToRandomPoint();
+    void ExecuteSmartMovement(const FVector& GoalLocation, AActor* GoalActor, float DeltaTime, float AcceptanceRadius);
+    bool FindBestEvadeWaypoint(const FVector& CurrentLoc, const FVector& GoalLocation, FVector& OutWaypoint) const;
+    void SteerAlongDirection(const FVector& Direction2D, float DeltaTime);
 
     UPROPERTY() ANexusZombie* ZombiePawn;
     UPROPERTY() ACharacter* PlayerTarget;
@@ -72,4 +79,11 @@ protected:
     float WanderTimer;
     float WanderInterval;
     FVector WanderTarget;
+
+    FVector LastCheckedLocation;
+    float StuckTimer;
+    float EvadeTimer;
+    float EvadeSideSign;
+    FVector EvadeWaypoint;
+    bool bHasEvadeWaypoint;
 };

@@ -9,7 +9,6 @@
 class UNexusEnemyFactory;
 class ANexusGameDirector;
 
-// Ya NO decide cuando crear oleadas: obedece al Director. Pide los enemigos a la fabrica.
 UCLASS()
 class NEXUS_API ANexusZombieSpawner : public AActor, public INexusObserver
 {
@@ -18,7 +17,6 @@ class NEXUS_API ANexusZombieSpawner : public AActor, public INexusObserver
 public:
     ANexusZombieSpawner();
 
-    // OBSERVER
     virtual void OnGameStateChanged(ENexusGameState NewState) override;
     virtual void OnHealthChanged(float, float) override {}
     virtual void OnAmmoChanged(int32, int32) override {}
@@ -27,7 +25,6 @@ public:
     virtual void OnTimeBonus(float) override {}
     virtual void OnCellsChanged(int32, int32) override {}
 
-    // Ordenes del Director
     void StartWave(int32 Count);
     void SpawnMiniBoss(int32 Bracket);
     bool SpawnBoss();
@@ -41,11 +38,7 @@ protected:
 
     UPROPERTY(EditAnywhere, Category = "Spawner") TSubclassOf<UNexusEnemyFactory> EnemyFactoryClass;
     UPROPERTY(EditAnywhere, Category = "Spawner") TArray<ANexusSpawnZone*> SpawnZones;
-
-    // Solo un spawner por nivel debe tener esto marcado: es el que crea al Tyrant
     UPROPERTY(EditAnywhere, Category = "Spawner") bool bIsBossSpawner;
-
-    // Segundos entre un zombie y el siguiente dentro de una oleada
     UPROPERTY(EditAnywhere, Category = "Spawner") float SpawnInterval;
 
     UPROPERTY() UNexusEnemyFactory* CurrentFactory;

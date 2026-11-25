@@ -6,6 +6,8 @@
 
 class UStaticMeshComponent;
 class UPointLightComponent;
+class UParticleSystem;
+class USoundBase;
 class ANexusGameDirector;
 
 // Celda de energia del nivel final: se destruye a disparos
@@ -21,6 +23,7 @@ public:
 
 protected:
     virtual void BeginPlay() override;
+    void TriggerDestroyExplosion();
 
     UPROPERTY(VisibleAnywhere, Category = "Components")
     UStaticMeshComponent* Mesh;
@@ -30,6 +33,18 @@ protected:
 
     UPROPERTY(EditAnywhere, Category = "Cell")
     float MaxHealth;
+
+    // Explosion visual sin dano al destruirse la celda
+    UPROPERTY(EditAnywhere, Category = "Cell|FX")
+    UParticleSystem* ExplosionEffect;
+
+    // Escala rapida de la explosion visual
+    UPROPERTY(EditAnywhere, Category = "Cell|FX")
+    FVector ExplosionScale;
+
+    // Sonido opcional de la explosion
+    UPROPERTY(EditAnywhere, Category = "Cell|FX")
+    USoundBase* ExplosionSound;
 
     float CurrentHealth;
     bool bDestroyed;

@@ -9,12 +9,14 @@
 #include "GameFramework/InputSettings.h"
 #include "GameFramework/GameUserSettings.h"
 #include "Blueprint/UserWidget.h"
+#include "TimerManager.h"
 #include "Sound/SoundMix.h"
 #include "Sound/SoundClass.h"
 
 namespace
 {
     const int32 ScenarioCount = 4;
+    const float LoadingPollInterval = 0.03f;
 
     const FIntPoint Resolutions[] = {
         FIntPoint(1280, 720), FIntPoint(1600, 900), FIntPoint(1920, 1080), FIntPoint(2560, 1440)
@@ -22,6 +24,7 @@ namespace
 
     FString SettingsSlot() { return TEXT("NexusSettings"); }
     FName MainMenuMap() { return FName(TEXT("/Game/Mapas/MainMenu")); }
+    const TCHAR* LoadingWidgetPath() { return TEXT("/Game/UI/Menu/WBP_LoadingScreen.WBP_LoadingScreen_C"); }
 
     FName GetScenarioMap(int32 Index)
     {
@@ -64,6 +67,16 @@ void UNexusSubsystem::Initialize(FSubsystemCollectionBase& Collection)
     Super::Initialize(Collection);
     CurrentGameState = ENexusGameState::Exploring;
     LoadSettings();
+
+    if (GEngine && GEngine->GetGameUserSettings())
+    {
+        UGameUserSettings* GS = GEngine->GetGameUserSettings();
+        if (GS->GetOverallScalabilityLevel() < 2)
+        {
+            GS->SetOverallScalabilityLevel(3);
+            GS->ApplySettings(false);
+        }
+    }
 }
 
 UNexusSubsystem* UNexusSubsystem::Get(const UObject* WorldContextObject)
@@ -74,8 +87,6 @@ UNexusSubsystem* UNexusSubsystem::Get(const UObject* WorldContextObject)
     }
     return nullptr;
 }
-
-// ===================== Estado + Observer =====================
 
 void UNexusSubsystem::SetGameState(ENexusGameState NewState)
 {
@@ -96,7 +107,6 @@ void UNexusSubsystem::DetachObserver(INexusObserver* Observer)
 
 void UNexusSubsystem::NotifyStateChanged()
 {
-    // Copia para evitar problemas si un observador se desuscribe durante el aviso
     TArray<INexusObserver*> Copy = Observers;
     for (INexusObserver* Obs : Copy)
     {
@@ -109,8 +119,6 @@ void UNexusSubsystem::TriggerBossEvent()
     SetGameState(ENexusGameState::BossFight);
     UE_LOG(LogTemp, Warning, TEXT("FACHADA: Evento Llave activado! El Spawner sabe que hacer."));
 }
-
-// ===================== Flujo de partida =====================
 
 void UNexusSubsystem::PrepareCampaign()
 {
@@ -147,14 +155,14 @@ void UNexusSubsystem::RestartCurrentLevel()
     if (UWorld* World = GetWorld())
     {
         const FString Path = UWorld::RemovePIEPrefix(World->GetOutermost()->GetName());
-        OpenMapByName(FName(*Path));
+        OpenMapByName(FName(*Path), CurrentScenarioIndex);
     }
 }
 
 void UNexusSubsystem::ReturnToMainMenu()
 {
     bCampaignMode = false;
-    OpenMapByName(MainMenuMap());
+    OpenMapByName(MainMenuMap(), -1);
 }
 
 void UNexusSubsystem::QuitToDesktop()
@@ -191,18 +199,140 @@ void UNexusSubsystem::ShowGameOver()
 void UNexusSubsystem::OpenScenario(int32 Index)
 {
     CurrentScenarioIndex = FMath::Clamp(Index, 0, ScenarioCount - 1);
-    OpenMapByName(GetScenarioMap(CurrentScenarioIndex));
+    OpenMapByName(GetScenarioMap(CurrentScenarioIndex), CurrentScenarioIndex);
 }
 
-void UNexusSubsystem::OpenMapByName(FName MapName)
+void UNexusSubsystem::OpenMapByName(FName MapName, int32 ScenarioIdxForLoading)
 {
+    if (bIsLoadingMap || MapName.IsNone()) return;
+
     bGameOverShown = false;
     UGameInstance* GI = GetGameInstance();
     UGameplayStatics::SetGamePaused(GI, false);
-    UGameplayStatics::OpenLevel(GI, MapName);
+
+    ShowLoadingAndTravel(MapName, ScenarioIdxForLoading);
 }
 
-// ===================== Dificultad =====================
+void UNexusSubsystem::ShowLoadingAndTravel(FName MapName, int32 ScenarioIdxForLoading)
+{
+    bIsLoadingMap = true;
+    bPackageReadyToOpen = false;
+    PendingMapName = MapName;
+    TargetScenarioIndex = ScenarioIdxForLoading;
+    LoadingProgress = 0.05f;
+
+    UGameInstance* GI = GetGameInstance();
+    APlayerController* PC = GI ? GI->GetFirstLocalPlayerController() : nullptr;
+    UClass* LoadingClass = LoadClass<UUserWidget>(nullptr, LoadingWidgetPath());
+
+    if (PC && LoadingClass)
+    {
+        if (!ActiveLoadingWidget)
+        {
+            ActiveLoadingWidget = CreateWidget<UUserWidget>(PC, LoadingClass);
+        }
+        if (ActiveLoadingWidget)
+        {
+            if (!ActiveLoadingWidget->IsInViewport())
+            {
+                ActiveLoadingWidget->AddToViewport(999);
+            }
+            ActiveLoadingWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+            PC->bShowMouseCursor = false;
+            PC->SetInputMode(FInputModeGameOnly());
+        }
+    }
+
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().SetTimer(
+            LoadingTickTimerHandle,
+            this,
+            &UNexusSubsystem::PollAsyncLoadProgress,
+            LoadingPollInterval,
+            true);
+    }
+
+    FLoadPackageAsyncDelegate LoadedDelegate;
+    LoadedDelegate.BindUObject(this, &UNexusSubsystem::OnMapPackageLoaded);
+    LoadPackageAsync(MapName.ToString(), LoadedDelegate, 0, PKG_None, INDEX_NONE);
+}
+
+void UNexusSubsystem::PollAsyncLoadProgress()
+{
+    if (!bIsLoadingMap || PendingMapName.IsNone())
+    {
+        StopLoadingTimer();
+        return;
+    }
+
+    if (bPackageReadyToOpen)
+    {
+        LoadingProgress = 1.0f;
+        StopLoadingTimer();
+        ExecuteOpenLevelNow(PendingMapName);
+        return;
+    }
+
+    const float AsyncPct = GetAsyncLoadPercentage(PendingMapName);
+    if (AsyncPct >= 0.0f)
+    {
+        LoadingProgress = FMath::Clamp(AsyncPct / 100.0f, 0.05f, 0.99f);
+    }
+    else
+    {
+        LoadingProgress = FMath::Clamp(LoadingProgress + 0.05f, 0.05f, 0.95f);
+    }
+}
+
+void UNexusSubsystem::OnMapPackageLoaded(const FName& PackageName, UPackage* LoadedPackage, EAsyncLoadingResult::Type Result)
+{
+    if (!bIsLoadingMap || PendingMapName.IsNone()) return;
+
+    bPackageReadyToOpen = true;
+    LoadingProgress = 1.0f;
+    StopLoadingTimer();
+
+    const FName MapToOpen = PendingMapName;
+    ExecuteOpenLevelNow(MapToOpen);
+}
+
+void UNexusSubsystem::ExecuteOpenLevelNow(FName MapToOpen)
+{
+    if (!bIsLoadingMap || MapToOpen.IsNone()) return;
+
+    bIsLoadingMap = false;
+    bPackageReadyToOpen = false;
+    PendingMapName = NAME_None;
+
+    UGameInstance* GI = GetGameInstance();
+    if (GI)
+    {
+        UGameplayStatics::OpenLevel(GI, MapToOpen);
+    }
+}
+
+void UNexusSubsystem::HideLoadingScreen()
+{
+    StopLoadingTimer();
+    bIsLoadingMap = false;
+    bPackageReadyToOpen = false;
+    LoadingProgress = 0.0f;
+
+    if (ActiveLoadingWidget)
+    {
+        ActiveLoadingWidget->RemoveFromParent();
+        ActiveLoadingWidget = nullptr;
+    }
+}
+
+void UNexusSubsystem::StopLoadingTimer()
+{
+    if (UWorld* World = GetWorld())
+    {
+        World->GetTimerManager().ClearTimer(LoadingTickTimerHandle);
+    }
+}
 
 FNexusDifficultyParams UNexusSubsystem::GetDifficultyParams() const
 {
@@ -218,12 +348,10 @@ FNexusDifficultyParams UNexusSubsystem::GetDifficultyParams() const
         P.SpawnRateMultiplier = 1.4f;   P.PickupMultiplier = 0.6f;
         break;
     default:
-        break; // Medio: todo en 1.0
+        break;
     }
     return P;
 }
-
-// ===================== Ajustes =====================
 
 void UNexusSubsystem::LoadSettings()
 {
@@ -313,8 +441,6 @@ int32 UNexusSubsystem::GetQualityLevel() const
     }
     return 2;
 }
-
-// ===================== Teclas =====================
 
 void UNexusSubsystem::StoreBinding(FName Name, bool bIsAxis, float Scale, const FKey& Key)
 {

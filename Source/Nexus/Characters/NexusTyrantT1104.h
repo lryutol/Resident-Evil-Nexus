@@ -30,6 +30,9 @@ public:
 
     ETyrantPhase GetPhase() const { return Phase; }
 
+    // Verdadero solo cuando esta activo y puede moverse/atacar
+    bool CanActAndMove() const;
+
 protected:
     virtual void BeginPlay() override;
     virtual void Die() override;
@@ -38,6 +41,7 @@ protected:
     void ExitDownedPhase();
     void StartRoar();
     void FinishRoar();
+    void HaltAIAndMovement();
 
     UPROPERTY(EditAnywhere, Category = "Tyrant") float DownedDuration;
     UPROPERTY(EditAnywhere, Category = "Tyrant") float HealthLossPerRevive;

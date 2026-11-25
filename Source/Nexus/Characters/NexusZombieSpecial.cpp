@@ -7,5 +7,5 @@ ANexusZombieSpecial::ANexusZombieSpecial()
     MaxHealth = 1000.f;
     CurrentHealth = MaxHealth;
     AttackDamage = 35.f;
-    AttackRange = 30.f;
+    AttackRange = 85.f;
 }

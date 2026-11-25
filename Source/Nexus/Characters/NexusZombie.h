@@ -35,8 +35,8 @@ public:
     void SetZombieState(EZombieState NewState) { CurrentState = NewState; }
     float GetAttackRange() const { return AttackRange; }
 
-    // El Director indica el punto donde debe ir para rodear al jugador
     void SetHuntTarget(const FVector& NewTarget) { HuntTargetLocation = NewTarget; bHasHuntTarget = true; }
+    void ClearHuntTarget() { HuntTargetLocation = FVector::ZeroVector; bHasHuntTarget = false; }
     bool HasHuntTarget() const { return bHasHuntTarget; }
     FVector GetHuntTarget() const { return HuntTargetLocation; }
 
@@ -67,7 +67,6 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Damage Zones")
     float DefaultMultiplier;
 
-    // Multiplicador del tiro a la cabeza (cualquier hueso cuyo nombre contenga "head")
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Damage Zones")
     float HeadMultiplier;
 
@@ -84,14 +83,12 @@ protected:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "AI")
     EZombieState CurrentState;
 
-    // Alcance del golpe medido desde la superficie de la capsula
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
     float AttackRange;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
     float AttackDamage;
 
-    // Luz de color que distingue a las variantes del Builder
     UPROPERTY(VisibleAnywhere, Category = "Variant")
     UPointLightComponent* VariantGlow;
 
@@ -108,6 +105,5 @@ protected:
     void ConfigureHitCollision();
     void PlayZombieSound(class USoundBase* SoundToPlay);
 
-    // Virtual: el Tyrant lo sobrescribe para su logica de inmortalidad
     virtual void Die();
 };

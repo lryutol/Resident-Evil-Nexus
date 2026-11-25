@@ -1,5 +1,3 @@
-// Source/Nexus/Nexus.Build.cs
-
 using UnrealBuildTool;
 
 public class Nexus : ModuleRules
@@ -15,9 +13,9 @@ public class Nexus : ModuleRules
             "InputCore",
             "HeadMountedDisplay",
             "UMG",
-            "AIModule",        // <-- NUEVO: Para usar AAIController
-            "NavigationSystem", // <-- NUEVO: Para el pathfinding (MoveToActor)
-            "GameplayTasks"     // <-- NUEVO: Dependencia de AIModule
+            "AIModule",
+            "NavigationSystem",
+            "GameplayTasks"
         });
     }
 }

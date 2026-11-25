@@ -3,6 +3,8 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Engine/StaticMesh.h"
+#include "Particles/ParticleSystem.h"
+#include "Sound/SoundBase.h"
 #include "Kismet/GameplayStatics.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -14,6 +16,10 @@ ANexusEnergyCell::ANexusEnergyCell()
     CurrentHealth = MaxHealth;
     bDestroyed = false;
     Director = nullptr;
+
+    ExplosionEffect = nullptr;
+    ExplosionScale = FVector(1.2f, 1.2f, 1.2f);
+    ExplosionSound = nullptr;
 
     Mesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("Mesh"));
     RootComponent = Mesh;
@@ -46,6 +52,30 @@ void ANexusEnergyCell::BeginPlay()
     }
 }
 
+void ANexusEnergyCell::TriggerDestroyExplosion()
+{
+    const FVector CellLocation = GetActorLocation();
+    const FRotator CellRotation = GetActorRotation();
+
+    // Explosion puramente visual y sonora (no llama a ApplyDamage ni afecta salud)
+    if (ExplosionEffect)
+    {
+        UGameplayStatics::SpawnEmitterAtLocation(
+            GetWorld(),
+            ExplosionEffect,
+            CellLocation,
+            CellRotation,
+            ExplosionScale,
+            true
+        );
+    }
+
+    if (ExplosionSound)
+    {
+        UGameplayStatics::PlaySoundAtLocation(this, ExplosionSound, CellLocation);
+    }
+}
+
 float ANexusEnergyCell::TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
     if (bDestroyed) return 0.f;
@@ -56,6 +86,8 @@ float ANexusEnergyCell::TakeDamage(float DamageAmount, struct FDamageEvent const
     if (CurrentHealth <= 0.f)
     {
         bDestroyed = true;
+        TriggerDestroyExplosion();
+
         if (Director)
         {
             Director->NotifyCellDestroyed();
